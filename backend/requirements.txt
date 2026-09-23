@@ -14,3 +14,5 @@ celery[redis]>=5.4.0
 pdfminer.six>=20231228
 python-multipart>=0.0.9
 honcho==1.1.0
+
+setuptools
