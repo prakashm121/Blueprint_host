@@ -1,4 +1,4 @@
-import os
+﻿import os
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -17,21 +17,27 @@ class Settings:
     elif raw_db_url.startswith("postgresql://"):
         raw_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg://", 1)
     DATABASE_URL: str = raw_db_url
+    
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash") # Legacy, fallback for old uses
+    GEMINI_PRIMARY_MODEL: str = os.getenv("GEMINI_PRIMARY_MODEL", os.getenv("GEMINI_MODEL", "gemini-1.5-pro"))
+    GEMINI_FALLBACK_MODEL: str = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
     GEMINI_TEMPERATURE: float = float(os.getenv("GEMINI_TEMPERATURE", "0.7"))
     GEMINI_MAX_TOKENS: int = int(os.getenv("GEMINI_MAX_TOKENS", "1024"))
     GEMINI_TOP_P: float = float(os.getenv("GEMINI_TOP_P", "0.95"))
     GEMINI_TOP_K: int = int(os.getenv("GEMINI_TOP_K", "40"))
-        # Supabase
+    GEMINI_CONCURRENCY: int = int(os.getenv("GEMINI_CONCURRENCY", "10"))
+    GEMINI_REQUEST_TIMEOUT: float = float(os.getenv("GEMINI_REQUEST_TIMEOUT", "45.0"))
+    
+    # Supabase
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
-    # Workers & scaling — Celery + Redis (replaces APScheduler + arq)
+    # Workers & scaling
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", os.getenv("REDIS_URL", "redis://localhost:6379/0"))
-    WORKER_MODE: str = os.getenv("WORKER_MODE", "celery")  # celery | embedded
+    WORKER_MODE: str = os.getenv("WORKER_MODE", "celery")
     OUTBOX_BATCH_SIZE: int = int(os.getenv("OUTBOX_BATCH_SIZE", "50"))
     OUTBOX_MAX_ATTEMPTS: int = int(os.getenv("OUTBOX_MAX_ATTEMPTS", "5"))
     OUTBOX_POLL_SECONDS: int = int(os.getenv("OUTBOX_POLL_SECONDS", "2"))
@@ -41,5 +47,3 @@ class Settings:
         return self.WORKER_MODE == "celery"
 
 settings = Settings()
-
-

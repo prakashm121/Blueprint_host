@@ -6,9 +6,8 @@ import logging
 
 from google import genai
 from app.core.config import settings
+from app.ai.gateway import ai_gateway
 from pdfminer.high_level import extract_text
-
-from app.services.ai_service import _GEMINI_SEMAPHORE, client
 
 logger = logging.getLogger("placementos.resume")
 
@@ -47,49 +46,6 @@ def _parse_json(text: str) -> dict:
 
 
 # ── Gemini call wrapper — shared semaphore + retry + timeout ─────────────────
-
-async def _gemini_call(parts, config, timeout_s: float, max_retries: int = 2) -> str:
-    """
-    Calls Gemini through the shared semaphore.
-    Retries on 429/503 with exponential backoff (2s, 4s).
-    """
-    last_exc = None
-    for attempt in range(max_retries + 1):
-        try:
-            async with _GEMINI_SEMAPHORE:
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.models.generate_content,
-                        model=settings.GEMINI_MODEL,
-                        contents=parts,
-                        config=config,
-                    ),
-                    timeout=timeout_s,
-                )
-            if not response.text:
-                raise RuntimeError("Gemini returned empty response")
-            return response.text
-
-        except asyncio.TimeoutError as e:
-            last_exc = e
-            logger.warning("Gemini timeout on attempt %d (%.0fs limit)", attempt + 1, timeout_s)
-            break  # never retry timeouts
-
-        except Exception as e:
-            last_exc = e
-            err_str = str(e).lower()
-            if any(x in err_str for x in ("429", "503", "quota", "rate")):
-                wait = 2 ** attempt
-                logger.warning("Gemini rate error attempt %d — retrying in %ds: %s",
-                               attempt + 1, wait, e)
-                await asyncio.sleep(wait)
-            else:
-                raise  # non-retryable
-
-    if last_exc is not None:
-        raise last_exc
-    raise RuntimeError("Failed to call Gemini")
-
 
 # ── Deterministic fallback — never crashes the endpoint ──────────────────────
 
@@ -173,10 +129,11 @@ async def analyse_text_resume(
         max_output_tokens=4000,
     )
     try:
-        text = await _gemini_call(
-            _text_prompt(raw_text, target_role, companies),
-            config,
-            timeout_s=TEXT_TIMEOUT,
+        text = await ai_gateway.generate(
+            task="resume_analysis",
+            prompt=_text_prompt(raw_text, target_role, companies),
+            timeout=TEXT_TIMEOUT,
+            model_override=settings.GEMINI_MODEL
         )
         return _parse_json(text)
     except json.JSONDecodeError:
@@ -185,7 +142,12 @@ async def analyse_text_resume(
         try:
             strict = _text_prompt(raw_text, target_role, companies) + \
                      "\n\nCRITICAL: Output ONLY the JSON object. Absolutely nothing else."
-            text = await _gemini_call(strict, config, timeout_s=TEXT_TIMEOUT, max_retries=0)
+            text = await ai_gateway.generate(
+                task="resume_analysis_strict",
+                prompt=strict,
+                timeout=TEXT_TIMEOUT,
+                model_override=settings.GEMINI_MODEL
+            )
             return _parse_json(text)
         except Exception as e:
             logger.error(f"Strict prompt retry failed: {e}. Raw text: {text[:500]}...")
