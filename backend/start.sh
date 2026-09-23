@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Starting FastAPI..."
-uvicorn app.main:app --host 0.0.0.0 --port "$PORT" &
+uvicorn main:app --host 0.0.0.0 --port "$PORT" &
 API_PID=$!
 
 echo "Starting Celery Worker..."
@@ -15,5 +15,7 @@ BEAT_PID=$!
 echo "FastAPI PID: $API_PID"
 echo "Worker PID: $WORKER_PID"
 echo "Beat PID: $BEAT_PID"
+
+trap "kill $API_PID $WORKER_PID $BEAT_PID" SIGTERM SIGINT
 
 wait
