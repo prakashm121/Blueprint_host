@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../../lib/supabase';
 import { api } from '../../api';
 
 const DIFF_COLORS = {
@@ -12,9 +14,16 @@ export default function DSAProblemDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [problem, setProblem] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data: problem, isLoading: loading, error: queryError } = useQuery({
+    queryKey: ['dsaProblem', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('dsa_problems').select('*').eq('id', id).single();
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const error = queryError ? 'Failed to load problem.' : null;
   const [notes, setNotes] = useState('');
   const [savedNotes, setSavedNotes] = useState([]);
   const [bookmarked, setBookmarked] = useState(false);
@@ -46,14 +55,17 @@ export default function DSAProblemDetail() {
     if (!notes.trim() || !problem) return;
     // Persist notes to the Knowledge Vault
     try {
-      await api.post('/api/v1/vault/', {
+      const { data: userData } = await supabase.auth.getUser();
+      const { data: userRow } = await supabase.from('users').select('id').eq('supabase_id', userData.user.id).single();
+      await supabase.from('vault_items').insert([{
+        user_id: userRow.id,
         item_type: 'PERSONAL_NOTE',
         reference_type: 'DSA',
         reference_id: problem.id,
         title: `Notes: ${problem.title}`,
         content: notes.trim(),
-      });
-    } catch { /* silent — store locally as fallback */ }
+      }]);
+    } catch { /* silent fallback */ }
     const date = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase();
     setSavedNotes(prev => [{ text: notes, date }, ...prev]);
     setNotes('');
@@ -74,13 +86,16 @@ export default function DSAProblemDetail() {
   const handleSaveToVault = async () => {
     if (!problem) return;
     try {
-      await api.post('/api/v1/vault/', {
+      const { data: userData } = await supabase.auth.getUser();
+      const { data: userRow } = await supabase.from('users').select('id').eq('supabase_id', userData.user.id).single();
+      await supabase.from('vault_items').insert([{
+        user_id: userRow.id,
         item_type: 'BOOKMARK',
         reference_type: 'DSA',
         reference_id: problem.id,
         title: problem.title,
         content: `Difficulty: ${problem.difficulty} | Topics: ${(problem.topic_tags || []).join(', ')}`,
-      });
+      }]);
     } catch { /* silent */ }
     setBookmarked(true);
   };

@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../../lib/supabase';
 import { api } from '../../api';
 import qaData from '../../data/qa_filters.json';
 
@@ -29,150 +31,130 @@ export default function InterviewQAEngine() {
   const activeSkill = searchParams.get('skill') || ''; 
   const activeDifficulty = searchParams.get('difficulty') || '';
 
-  const [questions, setQuestions] = useState([]);
+  const queryClient = useQueryClient();
   const [selectedQuestion, setSelectedQuestion] = useState(null);
-  const [nextCursor, setNextCursor] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadingList, setLoadingList] = useState(false);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-  const [error, setError] = useState(null);
   const [revealedAnswer, setRevealedAnswer] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
-  const [bookmarking, setBookmarking] = useState(false);
-  const [markingReviewed, setMarkingReviewed] = useState(false);
 
   // Combine the DB roles
   const visibleRoles = qaData.roles;
 
   // Handle category option matrix context drops safely
-  const relevantCategories =
-  activeRole && qaData.role_categories[activeRole]
-    ? qaData.role_categories[activeRole]
-    : qaData.categories;
+  const relevantCategories = activeRole && qaData.role_categories[activeRole] ? qaData.role_categories[activeRole] : qaData.categories;
+  const relevantSkills = activeCategory && qaData.category_skills && qaData.category_skills[activeCategory] ? qaData.category_skills[activeCategory] : [];
 
-  // Extract nested sub-skills contextually when a parent category is selected
-  const relevantSkills = activeCategory && qaData.category_skills && qaData.category_skills[activeCategory]
-    ? qaData.category_skills[activeCategory]
-    : [];
-
-  // Update query parameters safely with cascading resets
   const updateQueryParam = (key, val) => {
     const newParams = new URLSearchParams(searchParams);
-    if (val) {
-      newParams.set(key, val);
-    } else {
-      newParams.delete(key);
-    }
-    
-    // Cascading State Flush: Reset children when selection context changes
-    if (key === 'role') {
-      newParams.delete('category');
-      newParams.delete('skill');
-    }
-    if (key === 'category') {
-      newParams.delete('skill');
-    }
-    
+    if (val) { newParams.set(key, val); } else { newParams.delete(key); }
+    if (key === 'role') { newParams.delete('category'); newParams.delete('skill'); }
+    if (key === 'category') { newParams.delete('skill'); }
     setSearchParams(newParams);
     setSelectedQuestion(null);
     setRevealedAnswer(false);
   };
 
-  // Fetch items from backend API
+  const fetchQuestions = async ({ pageParam = 0 }) => {
+    let query = supabase.from('interview_questions').select('*');
+    if (pageParam > 0) query = query.gt('id', pageParam);
+    if (activeRole) query = query.contains('roles', [activeRole]);
+    if (activeCategory) query = query.eq('category', activeCategory);
+    if (activeSkill) query = query.eq('skill', activeSkill);
+    if (activeDifficulty) query = query.eq('difficulty', activeDifficulty);
+    
+    query = query.order('id', { ascending: true }).limit(20);
+    const { data, error } = await query;
+    if (error) throw error;
+    
+    const next_cursor = data.length === 20 ? data[19].id : null;
+    return { items: data, next_cursor };
+  };
+
+  const {
+    data,
+    error: queryError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage: loadingMore,
+    status
+  } = useInfiniteQuery({
+    queryKey: ['interviewQuestions', activeRole, activeCategory, activeSkill, activeDifficulty],
+    queryFn: fetchQuestions,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const questions = data ? data.pages.flatMap(page => page.items) : [];
+  const loadingList = status === 'pending';
+  const error = queryError ? 'Failed to acquire questions from active index.' : null;
+  const hasMore = hasNextPage;
+
+  // Auto-select first item
   useEffect(() => {
-    setLoadingList(true);
-    setError(null);
-
-    const params = {
-      limit: 20,
-      ...(activeRole && { role: activeRole }),
-      ...(activeCategory && { category: activeCategory }),
-      ...(activeSkill && { skill: activeSkill }), 
-      ...(activeDifficulty && { difficulty: activeDifficulty })
-    };
-
-    api.get('/api/v1/hub/interview', { params })
-      .then(res => {
-        const dataItems = res.data?.items || res.data || [];
-        const nc = res.data?.next_cursor ?? 0;
-        setQuestions(dataItems);
-        setNextCursor(nc);
-        setHasMore(dataItems.length === 20 && nc != null);
-        if (dataItems.length > 0) {
-          loadQuestionDetails(dataItems[0].id);
-        } else {
-          setSelectedQuestion(null);
-        }
-      })
-      .catch(() => setError('Failed to acquire questions from active index.'))
-      .finally(() => setLoadingList(false));
-  }, [activeRole, activeCategory, activeSkill, activeDifficulty]);
+    if (questions.length > 0 && !selectedQuestion && !loadingList) {
+      setSelectedQuestion(questions[0]);
+    } else if (questions.length === 0 && !loadingList) {
+      setSelectedQuestion(null);
+    }
+  }, [questions, selectedQuestion, loadingList]);
 
   const loadMore = () => {
-    if (loadingMore || !hasMore) return;
-    setLoadingMore(true);
-    const params = {
-      limit: 20,
-      last_id: nextCursor,
-      ...(activeRole && { role: activeRole }),
-      ...(activeCategory && { category: activeCategory }),
-      ...(activeSkill && { skill: activeSkill }),
-      ...(activeDifficulty && { difficulty: activeDifficulty }),
-    };
-    api.get('/api/v1/hub/interview', { params })
-      .then(res => {
-        const newItems = res.data?.items || [];
-        const nc = res.data?.next_cursor ?? 0;
-        setQuestions(prev => [...prev, ...newItems]);
-        setNextCursor(nc);
-        setHasMore(newItems.length === 20 && nc != null);
-      })
-      .catch(() => {})
-      .finally(() => setLoadingMore(false));
+    if (hasNextPage && !loadingMore) fetchNextPage();
   };
 
   const loadQuestionDetails = (id) => {
-    setLoadingDetail(true);
-    setRevealedAnswer(false);
-    setBookmarked(false);
-    api.get(`/api/v1/hub/interview/${id}`)
-      .then(res => { setSelectedQuestion(res.data); })
-      .catch(() => setError('Failed to sync complete item body structure.'))
-      .finally(() => setLoadingDetail(false));
+    const q = questions.find(x => x.id === id);
+    if (q) {
+      setSelectedQuestion(q);
+      setRevealedAnswer(false);
+      setBookmarked(false);
+    }
   };
 
-  const saveToVault = async (q, itemType = 'BOOKMARK') => {
-    try {
-      await api.post('/api/v1/vault/', {
-        item_type: itemType,
+  const saveMutation = useMutation({
+    mutationFn: async ({ q, itemType }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const { data: userRow } = await supabase.from('users').select('id').eq('supabase_id', userData.user.id).single();
+      
+      const { error } = await supabase.from('vault_items').insert([{
+        user_id: userRow.id,
+        itemType: itemType,
         reference_type: 'INTERVIEW',
         reference_id: q.id,
         title: q.title,
         content: q.body || '',
-      });
-    } catch { /* silent */ }
-  };
-
-  const handleBookmark = async () => {
-    if (!selectedQuestion || bookmarking) return;
-    setBookmarking(true);
-    await saveToVault(selectedQuestion, 'BOOKMARK');
-    setBookmarked(true);
-    setBookmarking(false);
-  };
-
-  const handleMarkReviewedAndNext = async () => {
-    if (!selectedQuestion || markingReviewed) return;
-    setMarkingReviewed(true);
-    await saveToVault(selectedQuestion, 'BOOKMARK');
-    const curPos = questions.findIndex(x => x.id === selectedQuestion.id);
-    if (curPos !== -1 && curPos < questions.length - 1) {
-      loadQuestionDetails(questions[curPos + 1].id);
+      }]);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setBookmarked(true);
+      queryClient.invalidateQueries(['vaultItems']);
     }
-    setMarkingReviewed(false);
+  });
+
+  const bookmarking = saveMutation.isPending;
+  const markingReviewed = saveMutation.isPending;
+
+  const handleBookmark = () => {
+    if (!selectedQuestion || bookmarking) return;
+    saveMutation.mutate({ q: selectedQuestion, itemType: 'BOOKMARK' });
   };
 
+  const handleMarkReviewedAndNext = () => {
+    if (!selectedQuestion || markingReviewed) return;
+    saveMutation.mutate({ q: selectedQuestion, itemType: 'BOOKMARK' }, {
+      onSuccess: () => {
+        setBookmarked(true);
+        const curPos = questions.findIndex(x => x.id === selectedQuestion.id);
+        if (curPos !== -1 && curPos < questions.length - 1) {
+          loadQuestionDetails(questions[curPos + 1].id);
+        }
+      }
+    });
+  };
+
+  // Needed variables for UI compatibility
+  const loadingDetail = false;
   return (
     <div className="bg-background-deep text-on-surface font-body-base antialiased min-h-screen">
       <div className="flex flex-col min-h-screen">
@@ -326,7 +308,7 @@ export default function InterviewQAEngine() {
                       </h4>
                       <div className="flex items-center justify-between gap-2 pt-1">
                         <span className="text-[9px] px-1.5 py-0.5 bg-surface-container-low text-on-surface-variant rounded border border-border-subtle truncate max-w-[180px]">
-                          {q.skill ? `${q.category} • ${q.skill}` : q.category}
+                          {q.skill ? `${q.category} â€¢ ${q.skill}` : q.category}
                         </span>
                         <span className={`text-[9px] font-bold uppercase tracking-wider ${
                           q.difficulty === 'Easy' ? 'text-emerald-400' : q.difficulty === 'Medium' ? 'text-amber-400' : 'text-rose-400'
@@ -344,7 +326,7 @@ export default function InterviewQAEngine() {
                   disabled={loadingMore}
                   className="w-full py-2 text-xs font-semibold text-primary border border-primary/20 rounded-xl hover:bg-primary/10 transition-all disabled:opacity-50"
                 >
-                  {loadingMore ? 'Loading…' : 'Load More'}
+                  {loadingMore ? 'Loadingâ€¦' : 'Load More'}
                 </button>
               )}
             </div>
@@ -440,7 +422,7 @@ export default function InterviewQAEngine() {
                         disabled={markingReviewed}
                         className="px-4 py-1.5 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white text-[11px] font-bold rounded-xl transition-all flex items-center gap-1 disabled:opacity-50"
                       >
-                        {markingReviewed ? 'Saving…' : 'Mark Reviewed & Next'}
+                        {markingReviewed ? 'Savingâ€¦' : 'Mark Reviewed & Next'}
                         <span className="material-symbols-outlined text-xs">done_all</span>
                       </button>
                     </div>

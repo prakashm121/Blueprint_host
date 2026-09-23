@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api';
@@ -25,7 +25,7 @@ const tileData = [
 export default function Dashboard() {
   const navigate = useNavigate();
   const logout = useAuthStore((state) => state.logout);
-  
+
   // -- Working API Query --
   const { data, isLoading, isError } = useQuery({
     queryKey: ['dashboardSummary'],
@@ -65,10 +65,14 @@ export default function Dashboard() {
     }));
   }, [dailyPlanData]);
 
-  // DSA stats from hub API for real total
+  // DSA stats aggregated from Supabase
   const { data: dsaStats } = useQuery({
     queryKey: ['dsaStats'],
-    queryFn: () => api.get('/api/v1/hub/stats/dsa').then(r => r.data),
+    queryFn: async () => {
+      const { data } = await supabase.from('user_coding_progress').select('id').eq('status', 'solved');
+      const { count } = await supabase.from('dsa_problems').select('*', { count: 'exact', head: true });
+      return { total_solved: data?.length || 0, total_target: count || 3632 };
+    },
     staleTime: 1000 * 60 * 10,
   });
 
@@ -79,10 +83,17 @@ export default function Dashboard() {
     staleTime: 1000 * 60 * 5,
   });
 
-  // Quiz accuracy from hub stats API (KPI Card 4)
+  // Quiz accuracy aggregated directly from Supabase
   const { data: quizStats } = useQuery({
     queryKey: ['quizStats'],
-    queryFn: () => api.get('/api/v1/hub/stats/quiz').then(r => r.data),
+    queryFn: async () => {
+      const { data } = await supabase.from('user_quiz_sessions').select('total_questions, correct_count');
+      const rows = data || [];
+      const total_attempted = rows.reduce((acc, r) => acc + (r.total_questions || 0), 0);
+      const total_correct = rows.reduce((acc, r) => acc + (r.correct_count || 0), 0);
+      const accuracy_pct = total_attempted > 0 ? Math.round((total_correct / total_attempted) * 100) : 0;
+      return { total_attempted, total_correct, accuracy_pct };
+    },
     staleTime: 1000 * 60 * 5,
   });
 
@@ -99,7 +110,7 @@ export default function Dashboard() {
 
   // Subject confidence computed values
   const confidentCount = subjectData?.confident_count ?? 0;
-  const subjectTotal  = subjectData?.total ?? 0;
+  const subjectTotal = subjectData?.total ?? 0;
   // Merge all groups for chip display: subjects + dsa + role_specific
   const subjectList = [];
   (subjectData?.categories ?? []).forEach(cat => {
@@ -108,25 +119,25 @@ export default function Dashboard() {
 
   // Quiz accuracy computed values
   const quizAttempted = quizStats?.total_attempted ?? 0;
-  const quizCorrect   = quizStats?.total_correct ?? 0;
-  const quizAccuracy  = quizStats?.accuracy_pct ?? 0;
+  const quizCorrect = quizStats?.total_correct ?? 0;
+  const quizAccuracy = quizStats?.accuracy_pct ?? 0;
 
   const welcomeName = useMemo(() => {
-    if (isLoading) return '…';
+    if (isLoading) return 'â€¦';
     if (isError) return '';
     return profile.full_name || 'Blueprint User';
   }, [profile.full_name, isError, isLoading]);
 
-  const targetDsa = stats.dsa_total; 
+  const targetDsa = stats.dsa_total;
   const dsaPercent = targetDsa > 0 ? Math.min((stats.dsa_solved / targetDsa) * 100, 100) : 0;
-  const weeklyTaskPercent = stats.weekly_tasks_total > 0 
-    ? (stats.weekly_tasks_completed / stats.weekly_tasks_total) * 100 
+  const weeklyTaskPercent = stats.weekly_tasks_total > 0
+    ? (stats.weekly_tasks_completed / stats.weekly_tasks_total) * 100
     : 0;
 
   // -- Helper Functions --
   const getReadinessLabel = (score) => {
-    if (score >= 85) return "Top 10% • Placement Ready";
-    if (score >= 75) return "Needs Work • Action Needed";
+    if (score >= 85) return "Top 10% â€¢ Placement Ready";
+    if (score >= 75) return "Needs Work â€¢ Action Needed";
     return "Critical Review Required";
   };
 
@@ -137,7 +148,7 @@ export default function Dashboard() {
   };
 
   const handleToggleTask = (id) => {
-    // Optimistic UI only — task status update goes through planner task endpoint
+    // Optimistic UI only â€” task status update goes through planner task endpoint
     queryClient.setQueryData(['dailyPlan'], old => {
       if (!old) return old;
       return {
@@ -160,7 +171,7 @@ export default function Dashboard() {
       });
       queryClient.invalidateQueries({ queryKey: ['dailyPlan'] });
     } catch {
-      // Silent fail — UI still shows it optimistically via invalidation
+      // Silent fail â€” UI still shows it optimistically via invalidation
     }
     setNewItemText("");
   };
@@ -191,8 +202,7 @@ export default function Dashboard() {
         <div className="relative bg-surface-card border border-border-subtle rounded-2xl p-6 overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
           <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary-fixed-dim/10 rounded-full blur-3xl pointer-events-none"></div>
           <div className="relative z-10">
-            <h2 className="text-xl font-bold text-on-surface tracking-tight">Welcome back, {welcomeName} 👋</h2>
-            <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
+            <h2 className="text-xl font-bold text-on-surface tracking-tight">Welcome back, {welcomeName} 👋</h2><p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
               Your next milestone target is: <span className="text-primary-fixed-dim font-semibold">{data?.next_milestone ?? 'Complete onboarding profile'}</span>
             </p>
           </div>
@@ -207,7 +217,7 @@ export default function Dashboard() {
 
         {/* Core Layout Grid: Placement Index & 2x2 Metric Stack */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
+
           {/* Left Block: Placement Readiness Circular Gauge */}
           <div className="lg:col-span-5 bg-surface-card border border-border-subtle rounded-2xl p-6 flex flex-col items-center justify-between min-h-75">
             <div className="w-full flex justify-between items-center border-b border-border-subtle/40 pb-3">
@@ -251,7 +261,7 @@ export default function Dashboard() {
 
           {/* Right Block: 2x2 Dynamic Stats Grid */}
           <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            
+
             {/* KPI Card 1: Algo Solved */}
             <div className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect">
               <div className="flex justify-between items-start">
@@ -299,13 +309,12 @@ export default function Dashboard() {
                   subjectList.slice(0, 6).map((s) => (
                     <span
                       key={s.skill_key}
-                      className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-md border ${
-                        s.confidence >= 70
+                      className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-md border ${s.confidence >= 70
                           ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                           : s.confidence >= 40
                             ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                             : 'bg-red-500/10 text-red-400 border-red-500/20'
-                      }`}
+                        }`}
                     >
                       {s.label}
                     </span>
@@ -390,9 +399,8 @@ export default function Dashboard() {
                 {focusItems.map((item) => (
                   <div
                     key={item.id} onClick={() => handleToggleTask(item.id)}
-                    className={`flex items-center gap-3 p-3 rounded-xl border border-border-subtle/50 hover:bg-surface-container-low transition-all cursor-pointer ${
-                      item.completed ? "opacity-60 bg-surface-container/40" : ""
-                    }`}
+                    className={`flex items-center gap-3 p-3 rounded-xl border border-border-subtle/50 hover:bg-surface-container-low transition-all cursor-pointer ${item.completed ? "opacity-60 bg-surface-container/40" : ""
+                      }`}
                   >
                     <button className="text-primary-fixed-dim transition-colors cursor-pointer shrink-0">
                       {item.completed ? <CheckSquare className="w-4 h-4 fill-primary-fixed-dim/20" /> : <Square className="w-4 h-4" />}
@@ -478,7 +486,7 @@ export default function Dashboard() {
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-primary-fixed-dim uppercase tracking-wider">AI Mentor Insights • Action Required</h4>
+              <h4 className="text-xs font-bold text-primary-fixed-dim uppercase tracking-wider">AI Mentor Insights â€¢ Action Required</h4>
               <p className="text-sm font-semibold text-on-surface mt-1">Ready for your next targeted interview session?</p>
               <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed max-w-2xl">
                 Break down your comprehensive goals into structured milestones via the planner dashboard. For live mock review metrics, direct evaluation checks, and resume optimizations, chat with your AI Mentor.
@@ -498,3 +506,5 @@ export default function Dashboard() {
     </div>
   );
 }
+
+

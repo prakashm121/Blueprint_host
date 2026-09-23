@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../../lib/supabase';
 import { api } from '../../api';
 import quizData from '../../data/quiz_filters.json';
 
@@ -21,7 +23,7 @@ export default function QuizEngine() {
   const topic      = searchParams.get('topic')      || '';
   const difficulty = searchParams.get('difficulty') || '';
 
-  // ── Machine states ──────────────────────────────────────────────────────
+  // â”€â”€ Machine states â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [quizStarted,    setQuizStarted]    = useState(false);
   const [questions,      setQuestions]      = useState([]);
   const [currentIdx,     setCurrentIdx]     = useState(0);
@@ -52,7 +54,7 @@ export default function QuizEngine() {
     setSearchParams(newParams);
   };
 
-  // ── Fetch questions ──────────────────────────────────────────────────────
+  // â”€â”€ Fetch questions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const startQuizSession = () => {
     setLoading(true);
     setError(null);
@@ -85,7 +87,7 @@ export default function QuizEngine() {
       .finally(() => setLoading(false));
   };
 
-  // ── Timer ────────────────────────────────────────────────────────────────
+  // â”€â”€ Timer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!quizStarted || quizCompleted || questions.length === 0) return;
 
@@ -114,11 +116,11 @@ export default function QuizEngine() {
     setSelectedAnswers(prev => ({ ...prev, [currentIdx]: optionKey }));
   };
 
-  // ── Server-side submission ───────────────────────────────────────────────
+  // â”€â”€ Server-side submission â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /**
-   * Builds the answers payload from (questions × selectedAnswers),
+   * Builds the answers payload from (questions Ã— selectedAnswers),
    * POST to /quiz/attempt, and stores the server's per-question results.
-   * Questions with no selection are skipped — the server only evaluates
+   * Questions with no selection are skipped â€” the server only evaluates
    * what was actually answered.
    */
   const handleSubmitAttempt = (timedOut = false) => {
@@ -132,7 +134,7 @@ export default function QuizEngine() {
       .filter(a => a.selected_option !== null);
 
     if (answers.length === 0) {
-      // Nothing answered — show completed screen without a server call
+      // Nothing answered â€” show completed screen without a server call
       setQuizCompleted(true);
       return;
     }
@@ -147,12 +149,12 @@ export default function QuizEngine() {
         setQuizCompleted(true);
       })
       .catch(() => {
-        setSubmitError('Failed to sync results. Your answers are preserved — please retry.');
+        setSubmitError('Failed to sync results. Your answers are preserved â€” please retry.');
       })
       .finally(() => setSubmitting(false));
   };
 
-  // ── Derived helpers for results view ────────────────────────────────────
+  // â”€â”€ Derived helpers for results view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const resultMap = attemptResult
     ? Object.fromEntries(attemptResult.results.map(r => [r.quiz_id, r]))
     : {};
@@ -162,13 +164,13 @@ export default function QuizEngine() {
   const answeredCount   = Object.keys(selectedAnswers).length;
   const unansweredCount = questions.length - answeredCount;
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div className="bg-background-deep text-on-surface font-body-base antialiased min-h-screen">
       <div className="flex flex-col min-h-screen">
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
 
-          {/* ── SubHeader ── */}
+          {/* â”€â”€ SubHeader â”€â”€ */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
             <div>
               <h2 className="text-2xl font-bold text-on-surface tracking-tight">Quiz Engine</h2>
@@ -178,7 +180,7 @@ export default function QuizEngine() {
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-            {/* ── Primary Workspace ── */}
+            {/* â”€â”€ Primary Workspace â”€â”€ */}
             <div className="lg:col-span-8 space-y-4">
 
               {error && (
@@ -195,7 +197,7 @@ export default function QuizEngine() {
 
               ) : !quizStarted ? (
 
-                /* ══════════════════ STEP 1: LOBBY ══════════════════ */
+                /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• STEP 1: LOBBY â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
                 <div className="space-y-6 bg-surface-container border border-border-subtle rounded-2xl p-6 shadow-sm">
                   <div>
                     <h3 className="text-lg font-bold text-on-surface">Targeted Training Setup</h3>
@@ -260,7 +262,7 @@ export default function QuizEngine() {
 
               ) : !quizCompleted ? (
 
-                /* ══════════════════ STEP 2: ACTIVE QUIZ ══════════════════ */
+                /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• STEP 2: ACTIVE QUIZ â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
                 <div className="bg-surface-container border border-border-subtle rounded-2xl p-6 shadow-sm space-y-6">
                   <div className="flex justify-between items-center border-b border-border-subtle/50 pb-4">
                     <div className="space-y-1">
@@ -354,7 +356,7 @@ export default function QuizEngine() {
 
               ) : (
 
-                /* ══════════════════ STEP 3: RESULTS ══════════════════ */
+                /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• STEP 3: RESULTS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
                 <div className="space-y-4">
 
                   {/* Score summary card */}
@@ -371,20 +373,20 @@ export default function QuizEngine() {
                       <div className="bg-surface-container-low border border-border-subtle p-3.5 rounded-xl">
                         <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">Accuracy</p>
                         <h4 className="text-xl font-bold text-emerald-400 mt-0.5">
-                          {attemptResult ? `${attemptResult.score_pct}%` : '—'}
+                          {attemptResult ? `${attemptResult.score_pct}%` : 'â€”'}
                         </h4>
                       </div>
                       <div className="bg-surface-container-low border border-border-subtle p-3.5 rounded-xl">
                         <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">Correct</p>
                         <h4 className="text-xl font-bold text-emerald-400 mt-0.5">
-                          {attemptResult?.correct ?? '—'}
+                          {attemptResult?.correct ?? 'â€”'}
                           <span className="text-xs text-on-surface-variant font-normal"> /{attemptResult?.total ?? questions.length}</span>
                         </h4>
                       </div>
                       <div className="bg-surface-container-low border border-border-subtle p-3.5 rounded-xl">
                         <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">Wrong</p>
                         <h4 className="text-xl font-bold text-rose-400 mt-0.5">
-                          {attemptResult?.incorrect ?? '—'}
+                          {attemptResult?.incorrect ?? 'â€”'}
                         </h4>
                       </div>
                       <div className="bg-surface-container-low border border-border-subtle p-3.5 rounded-xl">
@@ -499,14 +501,14 @@ export default function QuizEngine() {
               )}
             </div>
 
-            {/* ── Sidebar ── */}
+            {/* â”€â”€ Sidebar â”€â”€ */}
             <aside className="lg:col-span-4 space-y-4">
               <section className="bg-surface-container border border-border-subtle rounded-xl p-5 shadow-sm">
                 <div className="flex justify-between items-center mb-4">
                   <div>
                     <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Session Clock</p>
                     <h3 className={`text-2xl font-bold font-mono tracking-tight ${quizStarted && !quizCompleted && timeLeft < 60 ? 'text-rose-400 animate-pulse' : 'text-on-surface'}`}>
-                      {quizStarted ? formatTime(timeLeft) : '——'}
+                      {quizStarted ? formatTime(timeLeft) : 'â€”â€”'}
                     </h3>
                     <p className="text-xs text-on-surface-variant mt-0.5">Time Remaining</p>
                   </div>

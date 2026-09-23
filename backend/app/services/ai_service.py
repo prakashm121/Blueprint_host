@@ -1,5 +1,5 @@
-"""
-ai_service.py — All Gemini AI interactions.
+﻿"""
+ai_service.py â€” All Gemini AI interactions.
 Each function targets a specific feature: mentor chat, weekly task generation, daily breakdown, and role roadmap.
 """
 import asyncio
@@ -97,11 +97,48 @@ async def generate_mentor_response_async(
 
 
 def detect_teacher_task(msg: str) -> str:
-    if any(x in msg for x in ["deep dive", "deep dive into", "in detail"]): return "deep_dive"
-    if any(x in msg for x in ["give an example", "example"]): return "example"
-    if any(x in msg for x in ["compare", "difference between", "vs"]): return "compare"
-    if any(x in msg for x in ["quiz me", "test me"]): return "quiz"
-    if any(x in msg for x in ["practice", "practice questions"]): return "practice"
+    msg = msg.lower().strip()
+
+    if any(x in msg for x in [
+        "deep dive",
+        "deep dive into",
+        "in detail",
+        "deeply"
+    ]):
+        return "deep_dive"
+
+    if any(x in msg for x in [
+        "give an example",
+        "give examples",
+        "example",
+        "examples"
+    ]):
+        return "example"
+
+    if any(x in msg for x in [
+        "compare",
+        "difference between",
+        "difference",
+        " vs ",
+        "versus"
+    ]):
+        return "compare"
+
+    if any(x in msg for x in [
+        "quiz me",
+        "test me",
+        "ask me questions"
+    ]):
+        return "quiz"
+
+    if any(x in msg for x in [
+        "practice",
+        "practice questions",
+        "give me problems",
+        "give me questions"
+    ]):
+        return "practice"
+
     return "explain"
 
 def detect_mentor_task(msg: str) -> str:
@@ -129,70 +166,250 @@ async def resolve_conversation_state_async(
     message: str,
     history: list[dict]
 ) -> dict:
-    msg_lower = message.lower().strip()
-    
-    # 1. Deterministic Explicit Switches
-    if "switch to mentor" in msg_lower or "act as a mentor" in msg_lower:
-        return {"action": "switch_to_mentor", "mode": "mentor", "topic": None, "task": "general"}
-    if "switch to teacher" in msg_lower or "act as a teacher" in msg_lower:
-        return {"action": "switch_to_teacher", "mode": "teacher", "topic": current_topic, "task": "general"}
-    
-    match = re.search(r"teach me about ([\w\s]+)", msg_lower)
-    if match:
-        return {"action": "switch_to_teacher", "mode": "teacher", "topic": match.group(1).strip()[:100], "task": "explain"}
 
-    # 2. Existing Conversation Fast-Paths
+    msg_lower = message.lower().strip()
+
+    # ---------------------------------------------------------
+    # 1. Explicit agent switches always have highest priority
+    # ---------------------------------------------------------
+
+    if (
+        "switch to mentor" in msg_lower
+        or "act as a mentor" in msg_lower
+        or "be my mentor" in msg_lower
+    ):
+        return {
+            "action": "switch_to_mentor",
+            "mode": "mentor",
+            "topic": None,
+            "task": "general"
+        }
+
+    if (
+        "switch to teacher" in msg_lower
+        or "act as a teacher" in msg_lower
+        or "be my teacher" in msg_lower
+    ):
+        return {
+            "action": "switch_to_teacher",
+            "mode": "teacher",
+            "topic": current_topic,
+            "task": "explain"
+        }
+
+    # ---------------------------------------------------------
+    # 2. Explicit Teacher intent
+    #    MUST override the current conversation mode
+    # ---------------------------------------------------------
+
+    teacher_patterns = [
+        r"\bteach me(?: about| on)?\s+(.+)",
+        r"\bteach\s+(?:me\s+)?(?:about|on)?\s*(.+)",
+        r"\bexplain(?: to me)?\s+(.+)",
+        r"\bhelp me understand\s+(.+)",
+        r"\bwalk me through\s+(.+)",
+        r"\blearn about\s+(.+)",
+        r"\bwhat is\s+(.+)",
+        r"\bhow does\s+(.+?)\s+work\b",
+        r"\bhow do\s+(.+?)\s+work\b",
+    ]
+
+    for pattern in teacher_patterns:
+        match = re.search(pattern, msg_lower)
+
+        if match:
+            topic = match.group(1).strip()
+
+            # Remove common trailing conversational words
+            topic = re.sub(
+                r"\b(please|properly|in detail|from scratch)\b$",
+                "",
+                topic
+            ).strip()
+
+            return {
+                "action": "switch_to_teacher",
+                "mode": "teacher",
+                "topic": topic[:100],
+                "task": detect_teacher_task(msg_lower)
+            }
+
+    # ---------------------------------------------------------
+    # 3. Explicit Teacher tasks
+    # ---------------------------------------------------------
+
+    teacher_task = detect_teacher_task(msg_lower)
+
+    explicit_teacher_task = (
+        teacher_task != "explain"
+        and any(
+            phrase in msg_lower
+            for phrase in [
+                "deep dive",
+                "in detail",
+                "give an example",
+                "example",
+                "compare",
+                "difference between",
+                " vs ",
+                "quiz me",
+                "test me",
+                "practice questions",
+                "practice"
+            ]
+        )
+    )
+
+    if explicit_teacher_task:
+        return {
+            "action": "switch_to_teacher",
+            "mode": "teacher",
+            "topic": current_topic,
+            "task": teacher_task
+        }
+
+    # ---------------------------------------------------------
+    # 4. Existing Teacher conversation
+    # ---------------------------------------------------------
+
     if current_mode == "teacher":
+
+        # Only switch to Mentor when the user clearly asks
+        # for mentoring/career/planning guidance.
+
         if get_mentor_score(msg_lower) >= 3:
-            return {"action": "switch_to_mentor", "mode": "mentor", "topic": None, "task": detect_mentor_task(msg_lower)}
-        # Otherwise, assume normal follow-up
-        return {"action": "stay", "mode": "teacher", "topic": current_topic, "task": detect_teacher_task(msg_lower)}
+            return {
+                "action": "switch_to_mentor",
+                "mode": "mentor",
+                "topic": None,
+                "task": detect_mentor_task(msg_lower)
+            }
+
+        return {
+            "action": "stay",
+            "mode": "teacher",
+            "topic": current_topic,
+            "task": teacher_task
+        }
+
+    # ---------------------------------------------------------
+    # 5. Existing Mentor conversation
+    # ---------------------------------------------------------
 
     if current_mode == "mentor":
-        # Any explicit "teach me" is already caught above. Assume mentor follow up.
-        return {"action": "stay", "mode": "mentor", "topic": None, "task": detect_mentor_task(msg_lower)}
+        return {
+            "action": "stay",
+            "mode": "mentor",
+            "topic": None,
+            "task": detect_mentor_task(msg_lower)
+        }
 
-    # 3. Fallback for Brand New Conversations (No existing mode)
-    prompt = f"""You are a conversation router for an engineering student platform.
-We have two agents:
-- TEACHER: Explains technical concepts, quizzes the student, deep dives into technical subjects.
-- MENTOR: Gives career advice, roadmap planning, interview strategy, and identifies skill gaps.
+    # ---------------------------------------------------------
+    # 6. New conversation → Gemini router
+    # ---------------------------------------------------------
 
-User Message: {message}
+    prompt = f"""
+You are a conversation router for an engineering student platform.
+
+There are exactly two agents.
+
+TEACHER:
+- Explains technical concepts.
+- Teaches DSA, programming, CS subjects and engineering concepts.
+- Gives examples.
+- Performs deep dives.
+- Quizzes the student.
+- Helps the student understand a technical topic.
+
+MENTOR:
+- Gives career advice.
+- Creates learning plans and roadmaps.
+- Gives interview preparation strategy.
+- Identifies skill gaps.
+- Gives placement guidance.
+
+IMPORTANT ROUTING RULES:
+
+1. If the user says "teach", "teach me", "explain",
+   "help me understand", "walk me through", or asks
+   "what is/how does/how do" about a technical topic,
+   choose TEACHER.
+
+2. If the user asks what they should learn next,
+   creates a roadmap, asks about career, placements,
+   interviews, or skill gaps, choose MENTOR.
+
+3. Do not choose MENTOR merely because the message
+   mentions interviews, backend, DSA, or career goals.
+   Determine what the user is actually asking for.
+
+4. "Teach me graphs" means TEACHER.
+
+5. "Teach the graphs" means TEACHER.
+
+6. "Explain graphs" means TEACHER.
+
+7. "What should I learn about graphs?" means MENTOR.
+
+8. "Give me a roadmap for graphs" means MENTOR.
+
+User Message:
+{message}
 
 Output ONLY a JSON object with this exact schema:
+
 {{
-  "action": "stay" | "switch_to_teacher" | "switch_to_mentor",
+  "action": "switch_to_teacher" | "switch_to_mentor",
   "mode": "teacher" | "mentor",
   "topic": "string or null",
   "task": "general" | "explain" | "deep_dive" | "example" | "compare" | "quiz" | "practice" | "roadmap" | "career_advice" | "skill_gap" | "interview_prep"
 }}
 """
+
     try:
-        timeout_s = float(getattr(settings, "GEMINI_REQUEST_TIMEOUT", 15.0))
+        timeout_s = float(
+            getattr(settings, "GEMINI_REQUEST_TIMEOUT", 15.0)
+        )
+
         async with _GEMINI_SEMAPHORE:
             response = await asyncio.wait_for(
                 asyncio.to_thread(
                     client.models.generate_content,
                     model=settings.GEMINI_MODEL,
                     contents=prompt,
-                    config=genai.types.GenerateContentConfig(response_mime_type="application/json", response_schema=list[MilestoneSchema]),
+                    config=genai.types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    ),
                 ),
                 timeout=timeout_s,
             )
+
         state = _parse_gemini_json(response.text)
-        
+
         if state.get("mode") not in ["teacher", "mentor"]:
             state["mode"] = "mentor"
+
         if state.get("task") not in ALLOWED_TASKS:
             state["task"] = "general"
-            
+
+        if state.get("action") not in [
+            "stay",
+            "switch_to_teacher",
+            "switch_to_mentor"
+        ]:
+            state["action"] = (
+                "switch_to_teacher"
+                if state["mode"] == "teacher"
+                else "switch_to_mentor"
+            )
+
         return state
-        
+
     except Exception as e:
         print(f"Router failed: {e}. Falling back to mentor state.")
+
         return {
-            "action": "stay",
+            "action": "switch_to_mentor",
             "mode": "mentor",
             "topic": None,
             "task": "general"
@@ -220,7 +437,7 @@ async def generate_weekly_tasks_async(
     Generate new weekly tasks using the AI.
 
     Args:
-        ctx: Pre-built context from build_weekly_plan_context() — includes
+        ctx: Pre-built context from build_weekly_plan_context() â€” includes
              profile, progress (readiness, planner completion, dsa solved),
              weak_areas, and completed_task_titles.
         carry_over_titles: Task titles being carried over from last week.
@@ -247,7 +464,7 @@ async def generate_weekly_tasks_async(
     completed_str = "\n".join(f"- {t}" for t in done_titles) if done_titles else "None yet"
     carry_str     = "\n".join(f"- {t}" for t in carry_over_titles) if carry_over_titles else "None"
     weak_str      = ", ".join(weak_areas) if weak_areas else "None identified"
-    milestone_str = "\n".join(f"- {m['title']} ({m['category']})" for m in roadmap_milestones) if roadmap_milestones else "No roadmap yet — generate tasks across DSA, Subjects, Resume."
+    milestone_str = "\n".join(f"- {m['title']} ({m['category']})" for m in roadmap_milestones) if roadmap_milestones else "No roadmap yet â€” generate tasks across DSA, Subjects, Resume."
 
     urgency = ""
     if months_to_graduation is not None:
@@ -273,7 +490,7 @@ async def generate_weekly_tasks_async(
 - Last week planner completion: {plan_done_pct:.0f}%
 - DSA problems solved: {dsa_solved}
 
-## Roadmap — Next Milestones to Work Toward
+## Roadmap â€” Next Milestones to Work Toward
 {milestone_str}
 
 ## Task History
@@ -291,7 +508,7 @@ Generate exactly {new_count} NEW tasks for this week that:
 1. Directly advance one or more of the roadmap milestones listed above.
 2. Do NOT repeat any carried-over or already-completed topics.
 3. Prioritize weak areas and time-sensitive milestones given the urgency context.
-4. Are specific and actionable — not generic.
+4. Are specific and actionable â€” not generic.
 5. Are relevant to the target role: {target_role}.
 
 Return a JSON array of exactly {new_count} objects:
@@ -315,7 +532,7 @@ priority must be one of: High, Medium, Low.
                     client.models.generate_content,
                     model=settings.GEMINI_MODEL,
                     contents=prompt,
-                    config=genai.types.GenerateContentConfig(response_mime_type="application/json", response_schema=list[MilestoneSchema]),
+                    config=genai.types.GenerateContentConfig(response_mime_type="application/json"),
                 ),
                 timeout=timeout_s,
             )
@@ -371,7 +588,7 @@ async def generate_role_roadmap_async(
     preparation_status: str = "early",
 ) -> list[dict]:
     """
-    Generate a flat list of 10–15 placement milestones for the given role.
+    Generate a flat list of 10â€“15 placement milestones for the given role.
     Weak areas are surfaced earlier in priority order.
     Returns [] on any failure so the caller can use the hardcoded fallback.
     """
@@ -379,10 +596,10 @@ async def generate_role_roadmap_async(
     companies_str = ", ".join(target_companies) if target_companies else "Top product companies"
 
     stage_context = {
-        "not_started":    "The student is just beginning — prioritize DSA foundations and core subjects.",
-        "early":          "The student has started preparation — build breadth across DSA and subjects.",
-        "mid":            "The student is mid-preparation — shift toward system design, projects, and interview practice.",
-        "final_stretch":  "The student is in the final stretch — focus on mock interviews, company-specific prep, and resume polish.",
+        "not_started":    "The student is just beginning â€” prioritize DSA foundations and core subjects.",
+        "early":          "The student has started preparation â€” build breadth across DSA and subjects.",
+        "mid":            "The student is mid-preparation â€” shift toward system design, projects, and interview practice.",
+        "final_stretch":  "The student is in the final stretch â€” focus on mock interviews, company-specific prep, and resume polish.",
     }.get(preparation_status, "Build strong fundamentals first.")
 
     prompt = f"""You are an expert AI Career Coach and Engineering Interview Preparation Planner.
@@ -433,12 +650,12 @@ Do this reasoning internally. Do not include the reasoning in the output.
 
 ## Roadmap Requirements
 
-Generate exactly 10–15 milestones.
+Generate exactly 10â€“15 milestones.
 
 Each milestone must:
 
 * Be concrete and actionable.
-* Take approximately 1–3 weeks to complete.
+* Take approximately 1â€“3 weeks to complete.
 * Produce a meaningful outcome.
 * Have a clear relationship to the target role.
 * Avoid duplicating another milestone.
@@ -447,7 +664,7 @@ Each milestone must:
 
 The roadmap should progress approximately as:
 
-Foundations → Role Skills → Practical Implementation → Projects/System Design → Interview Preparation → Company Preparation → Mock Interviews
+Foundations â†’ Role Skills â†’ Practical Implementation â†’ Projects/System Design â†’ Interview Preparation â†’ Company Preparation â†’ Mock Interviews
 
 However, change this ordering when the student's preparation stage or weak areas require it.
 
@@ -627,14 +844,14 @@ This is guidance, not a rigid ordering. Adjust it when dependencies require a di
 
 Before returning the answer, internally verify:
 
-* There are 10–15 milestones.
+* There are 10â€“15 milestones.
 * There are no duplicate milestones.
 * No more than 3 milestones have category `DSA`.
 * At least 5 milestones directly develop target-role-specific skills.
 * Weak areas relevant to the role appear early.
 * Milestones follow reasonable learning dependencies.
 * Every milestone is actionable.
-* Every milestone can realistically be completed in 1–3 weeks.
+* Every milestone can realistically be completed in 1â€“3 weeks.
 * The roadmap contains appropriate coverage of DSA, Core Subjects, System Design, Projects, Resume, Company Preparation, and Mock Interviews.
 * The roadmap is appropriate for the student's preparation stage.
 * The roadmap is specific to `{target_role}`.
@@ -679,7 +896,7 @@ The final JSON must follow this structure:
                     client.models.generate_content,
                     model=settings.GEMINI_MODEL,
                     contents=prompt,
-                    config=genai.types.GenerateContentConfig(response_mime_type="application/json", response_schema=list[MilestoneSchema]),
+                    config=genai.types.GenerateContentConfig(response_mime_type="application/json"),
                 ),
                 timeout=timeout_s,
             )
@@ -690,6 +907,8 @@ The final JSON must follow this structure:
     except Exception as e:
         print(f"Failed to generate role roadmap: {e}")
         return []
+
+
 
 
 

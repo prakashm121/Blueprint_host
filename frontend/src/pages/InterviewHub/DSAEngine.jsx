@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { supabase } from '../../lib/supabase';
 import { api } from '../../api';
 import filterData from '../../data/filters.json';
 
@@ -29,7 +31,7 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
     : (typeof problem.topic_tags === 'string' ? problem.topic_tags.split(',').map(t => t.replace(/['\[\]]/g, '').trim()) : []);
   
   const topics = rawTopics.slice(0, 2);
-  const acceptance = problem.acRate ? `${parseFloat(problem.acRate).toFixed(1)}%` : '—';
+  const acceptance = problem.acRate ? `${parseFloat(problem.acRate).toFixed(1)}%` : 'â€”';
   // Use first topic as the AI teach target
   const firstTopic = rawTopics[0] || problem.title || '';
 
@@ -65,7 +67,7 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
                 {t}
               </Link>
             ))}
-            {topics.length > 0 && <span className="text-border-subtle">•</span>}
+            {topics.length > 0 && <span className="text-border-subtle">â€¢</span>}
             <span>Acceptance: <span className="text-on-surface font-medium">{acceptance}</span></span>
           </div>
 
@@ -108,15 +110,6 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
 
 export default function DSAEngine() {
   const navigate = useNavigate();
-  const [problems, setProblems] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [initialLoad, setInitialLoad] = useState(true);
-  const [nextCursor, setNextCursor] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [error, setError] = useState(null);
-  const [stats, setStats] = useState(null);
-  const [statsLoading, setStatsLoading] = useState(true);
-
   const [searchParams, setSearchParams] = useSearchParams();
   const company = searchParams.get('company') || '';
   const topic = searchParams.get('topic') || '';
@@ -128,64 +121,63 @@ export default function DSAEngine() {
     setSearchParams(newParams);
   };
 
-  const fetchStats = useCallback(() => {
-    api.get('/api/v1/hub/stats/dsa')
-      .then(r => setStats(r.data))
-      .catch(() => {})
-      .finally(() => setStatsLoading(false));
-  }, []);
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ['dsaStats'],
+    queryFn: async () => {
+      const r = await api.get('/api/v1/hub/stats/dsa');
+      return r.data;
+    },
+    staleTime: 5 * 60 * 1000
+  });
 
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+  const fetchProblems = async ({ pageParam = 0 }) => {
+    let query = supabase.from('dsa_problems').select('*');
+    if (pageParam > 0) query = query.gt('id', pageParam);
+    if (company && company !== "All") query = query.contains('companies', [company]);
+    if (topic && topic !== "All") query = query.contains('topic_tags', [topic]);
+    if (difficulty && difficulty !== "All") query = query.eq('difficulty', difficulty);
+    
+    query = query.order('id', { ascending: true }).limit(20);
+    const { data, error } = await query;
+    if (error) throw error;
+    
+    const next_cursor = data.length === 20 ? data[19].id : null;
+    return { items: data, next_cursor };
+  };
+
+  const {
+    data,
+    error: queryError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    status
+  } = useInfiniteQuery({
+    queryKey: ['dsaProblems', company, topic, difficulty],
+    queryFn: fetchProblems,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const problems = data ? data.pages.flatMap(page => page.items) : [];
+  const initialLoad = status === 'pending';
+  const loading = isFetchingNextPage;
+  const hasMore = hasNextPage;
+  const error = queryError;
 
   const loaderRef = useRef(null);
-  const fetchingRef = useRef(false);
-
-  const fetchProblems = useCallback(async (cursor, reset = false) => {
-    if (fetchingRef.current) return;
-    fetchingRef.current = true;
-    setLoading(true);
-    setError(null);
-    try {
-      const params = { last_id: cursor, limit: 20, ...(company && { company }), ...(topic && { topic }), ...(difficulty && { difficulty }) };
-      const res = await api.get('/api/v1/hub/coding', { params });
-      const { items, next_cursor } = res.data;
-
-      setProblems(prev => {
-        if (reset) return items;
-        const existingIds = new Set(prev.map(p => p.id));
-        return [...prev, ...items.filter(p => !existingIds.has(p.id))];
-      });
-      setNextCursor(next_cursor ?? 0);
-      setHasMore(items.length === 20 && next_cursor != null);
-    } catch (err) {
-      setError('Failed to load problems. Please try again.');
-    } finally {
-      setLoading(false);
-      setInitialLoad(false);
-      fetchingRef.current = false;
-    }
-  }, [company, topic, difficulty]);
-
-  useEffect(() => {
-    setProblems([]);
-    setNextCursor(0);
-    setHasMore(true);
-    setInitialLoad(true);
-    fetchProblems(0, true);
-  }, [company, topic, difficulty, fetchProblems]);
 
   useEffect(() => {
     if (!loaderRef.current) return;
     const observer = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore && !fetchingRef.current) {
-        fetchProblems(nextCursor);
+      if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
       }
     }, { threshold: 0.1 });
     observer.observe(loaderRef.current);
     return () => observer.disconnect();
-  }, [hasMore, nextCursor, fetchProblems]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -212,7 +204,7 @@ export default function DSAEngine() {
                 <span className="text-xs text-emerald-400 font-bold">{stats?.easy_solved ?? 0} Easy</span>
                 <span className="text-xs text-amber-400 font-bold">{stats?.medium_solved ?? 0} Med</span>
                 <span className="text-xs text-rose-400 font-bold">{stats?.hard_solved ?? 0} Hard</span>
-                <span className="text-xs text-on-surface-variant">🔥 {stats?.streak ?? 0} days</span>
+                <span className="text-xs text-on-surface-variant">ðŸ”¥ {stats?.streak ?? 0} days</span>
               </div>
             </>
           )}
@@ -256,7 +248,7 @@ export default function DSAEngine() {
                 </select>
               </div>
 
-              {/* Problem list — only this scrolls */}
+              {/* Problem list â€” only this scrolls */}
               <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-1 pb-4">
                 {error && (
                   <div className="text-center py-8 text-rose-400 bg-rose-500/5 rounded-xl border border-rose-500/10 text-sm">
@@ -301,7 +293,7 @@ export default function DSAEngine() {
               </div>
             </div>
 
-            {/* Stats sidebar — desktop only (mobile has compact strip above) */}
+            {/* Stats sidebar â€” desktop only (mobile has compact strip above) */}
             <aside className="hidden lg:flex lg:col-span-4 flex-col h-full overflow-y-auto custom-scrollbar space-y-4 pr-2">
               <section className="bg-surface-container border border-border-subtle rounded-xl p-5 shadow-sm">
                 {statsLoading ? (
@@ -387,3 +379,4 @@ export default function DSAEngine() {
     </div>
   );
 }
+

@@ -1,5 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api';
 import { ArrowLeft, Send, Bot, Loader2, PlusCircle, Bookmark } from 'lucide-react';
 
@@ -10,6 +13,115 @@ const SUGGESTIONS = [
   'Suggest system design topics',
 ];
 
+function AssistantMessage({ content }) {
+  return (
+    <div className="prose prose-invert max-w-none text-sm leading-7 text-on-surface-variant">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ children }) => (
+            <h1 className="text-xl font-bold text-on-surface mt-2 mb-4">
+              {children}
+            </h1>
+          ),
+          h2: ({ children }) => (
+            <h2 className="text-lg font-bold text-on-surface mt-6 mb-3">
+              {children}
+            </h2>
+          ),
+          h3: ({ children }) => (
+            <h3 className="text-base font-semibold text-on-surface mt-5 mb-2">
+              {children}
+            </h3>
+          ),
+          p: ({ children }) => (
+            <p className="mb-4 last:mb-0">
+              {children}
+            </p>
+          ),
+          strong: ({ children }) => (
+            <strong className="font-semibold text-on-surface">
+              {children}
+            </strong>
+          ),
+          ul: ({ children }) => (
+            <ul className="list-disc pl-6 space-y-2 mb-4">
+              {children}
+            </ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="list-decimal pl-6 space-y-2 mb-4">
+              {children}
+            </ol>
+          ),
+          li: ({ children }) => (
+            <li className="pl-1">
+              {children}
+            </li>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-2 border-primary-container/50 pl-4 my-4 italic text-on-surface-variant/80">
+              {children}
+            </blockquote>
+          ),
+          code: ({ inline, children, ...props }) =>
+            inline ? (
+              <code
+                className="px-1.5 py-0.5 rounded-md bg-surface-container-high text-primary-fixed-dim text-[13px] font-mono"
+                {...props}
+              >
+                {children}
+              </code>
+            ) : (
+              <code
+                className="block text-[13px] leading-6 font-mono"
+                {...props}
+              >
+                {children}
+              </code>
+            ),
+          pre: ({ children }) => (
+            <pre className="my-5 p-4 rounded-xl bg-background-deep border border-border-subtle overflow-x-auto shadow-inner">
+              {children}
+            </pre>
+          ),
+          a: ({ children, href }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary-fixed-dim hover:underline"
+            >
+              {children}
+            </a>
+          ),
+          hr: () => (
+            <hr className="my-6 border-border-subtle" />
+          ),
+          table: ({ children }) => (
+            <div className="overflow-x-auto my-5 rounded-xl border border-border-subtle">
+              <table className="w-full text-sm">
+                {children}
+              </table>
+            </div>
+          ),
+          th: ({ children }) => (
+            <th className="px-4 py-3 text-left font-semibold text-on-surface bg-surface-container">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="px-4 py-3 border-t border-border-subtle">
+              {children}
+            </td>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
 export default function Mentor() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -69,7 +181,7 @@ export default function Mentor() {
 
   const hasSentTeachRef = useRef(false);
 
-  // Handle ?teach= param — auto-send a teacher message after history loads, only once per session
+  // Handle ?teach= param â€” auto-send a teacher message after history loads, only once per session
   useEffect(() => {
     if (historyLoading || hasSentTeachRef.current) return;
     const teachTopic = searchParams.get('teach');
@@ -177,7 +289,7 @@ export default function Mentor() {
       {/* Main Interface */}
       <div className="flex-1 w-full max-w-[1400px] mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-4 gap-6 min-h-0">
         
-        {/* Sidebar — desktop only */}
+        {/* Sidebar â€” desktop only */}
         <div className="hidden md:flex flex-col bg-surface-card border border-border-subtle rounded-2xl overflow-hidden shadow-2xl h-full">
           <div className="p-4 border-b border-border-subtle/40 bg-surface-container-low/30">
             <h3 className="text-sm font-bold text-on-surface">Past Conversations</h3>
@@ -227,7 +339,7 @@ export default function Mentor() {
                 <h2 className="text-base font-bold text-on-surface tracking-tight">AI Career Coach</h2>
                 <p className="text-[11px] text-success font-medium flex items-center gap-1.5 mt-0.5 tracking-wide">
                   <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.5)]"></span>
-                  Active · Grounded in your progress
+                  Active Â· Grounded in your progress
                 </p>
               </div>
             </div>
@@ -257,16 +369,16 @@ export default function Mentor() {
             {messages.map((msg, i) => (
               <div key={i} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {msg.role === 'assistant' ? (
-                  <div className="w-full border-l-2 border-primary-container/30 pl-4 py-1">
-                    <div className="text-sm leading-relaxed text-on-surface-variant whitespace-pre-wrap font-mono">
-                      {msg.content}
-                    </div>
-                    <div className="flex justify-between items-center mt-4">
-                      <button 
+                  <div className="w-full border-l-2 border-primary-container/30 pl-5 py-2">
+                    <AssistantMessage content={msg.content} />
+                    <div className="flex justify-between items-center mt-5 pt-3 border-t border-border-subtle/30">
+                      <button
                         onClick={() => handleSaveInsight(msg.content, i)}
                         disabled={savedMsgIds.has(i)}
                         className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                          savedMsgIds.has(i) ? 'text-amber-400' : 'text-on-surface-variant/50 hover:text-amber-400'
+                          savedMsgIds.has(i)
+                            ? 'text-amber-400'
+                            : 'text-on-surface-variant/50 hover:text-amber-400'
                         }`}
                       >
                         <Bookmark className="w-3.5 h-3.5" />
@@ -321,7 +433,7 @@ export default function Mentor() {
                 type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                placeholder='Ask anything — or try "Teach me Graphs"'
+                placeholder='Ask anything â€” or try "Teach me Graphs"'
                 className="w-full bg-background-deep border border-border-subtle rounded-full py-3.5 pl-6 pr-14 text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none transition-all focus:border-primary-fixed-dim/60 focus:bg-surface-container-low"
                 disabled={loading || historyLoading}
               />

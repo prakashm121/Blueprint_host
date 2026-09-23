@@ -228,10 +228,14 @@ def submit_role_skills(
     role = current_user.target_role or "Software Engineer"
     valid_keys = get_valid_keys(role)
 
+    # Deduplicate: only keep the last confidence value per skill_key
+    seen = {}
     for item in body.updates:
-        if item.skill_key not in valid_keys:
-            continue
-        category = get_category_for_key(role, item.skill_key)
+        if item.skill_key in valid_keys:
+            seen[item.skill_key] = item.confidence
+
+    for skill_key, conf in seen.items():
+        category = get_category_for_key(role, skill_key)
         skill_type = "subject" if category == "Core Subjects" else ("dsa" if category == "DSA" else "role_specific")
 
         existing = (
@@ -239,21 +243,22 @@ def submit_role_skills(
             .filter(
                 UserSkillAssessment.user_id == current_user.id,
                 UserSkillAssessment.role == role,
-                UserSkillAssessment.skill_key == item.skill_key,
+                UserSkillAssessment.skill_key == skill_key,
             )
             .first()
         )
         if existing:
-            existing.self_rated_confidence = item.confidence
+            existing.self_rated_confidence = conf
         else:
             db.add(UserSkillAssessment(
                 user_id=current_user.id,
-                skill_key=item.skill_key,
+                skill_key=skill_key,
                 skill_type=skill_type,
                 category=category,
                 role=role,
-                self_rated_confidence=item.confidence,
+                self_rated_confidence=conf,
             ))
+            db.flush()
 
     current_user.onboarding_step = "generate_roadmap"
     db.commit()

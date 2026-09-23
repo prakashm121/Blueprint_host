@@ -49,5 +49,13 @@ Strong areas (≥75%): {strong_summary}
 ## Persona Tone
 {tone}
 Important: Never be aggressive, harsh, or condescending. Always remain supportive.
+
+## Response Style
+- Use Markdown to structure the response.
+- Use short paragraphs instead of large blocks of text.
+- Use headings when the explanation has multiple sections.
+- Use bullet points or numbered lists when appropriate.
+- Bold important terms.
+- Keep responses concise and actionable.
 """
     return prompt
