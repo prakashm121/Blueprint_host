@@ -6,41 +6,41 @@ import { api } from '../../api';
 import quizData from '../../data/quiz_filters.json';
 
 const SECTION_ICONS = {
-  'AI & ML':          { icon: 'psychology', desc: 'Neural networks, training optimization, and modeling vectors.' },
-  'DevOps Engineer':  { icon: 'terminal',   desc: 'CI/CD pipeline matrices, infrastructure as code, and cloud architectures.' },
-  'React Engineer':   { icon: 'code',       desc: 'Dynamic state synchronization, custom hooks, and layout rendering optimization.' },
-  'SAP Engineer':     { icon: 'layers',     desc: 'Enterprise data architecture, ABAP logic, and business workflows.' },
-  'Numerical Ability':{ icon: 'calculate',  desc: 'Mathematical reasoning, metrics verification, and strategic calculation.' },
-  'Logical Reasoning':{ icon: 'extension',  desc: 'Pattern deduction, system matrix isolation, and sequence routing.' },
-  'Verbal Ability':   { icon: 'translate',  desc: 'Syntactical comprehension, grammar validation, and vocabulary mapping.' },
+  'AI & ML': { icon: 'psychology', desc: 'Neural networks, training optimization, and modeling vectors.' },
+  'DevOps Engineer': { icon: 'terminal', desc: 'CI/CD pipeline matrices, infrastructure as code, and cloud architectures.' },
+  'React Engineer': { icon: 'code', desc: 'Dynamic state synchronization, custom hooks, and layout rendering optimization.' },
+  'SAP Engineer': { icon: 'layers', desc: 'Enterprise data architecture, ABAP logic, and business workflows.' },
+  'Numerical Ability': { icon: 'calculate', desc: 'Mathematical reasoning, metrics verification, and strategic calculation.' },
+  'Logical Reasoning': { icon: 'extension', desc: 'Pattern deduction, system matrix isolation, and sequence routing.' },
+  'Verbal Ability': { icon: 'translate', desc: 'Syntactical comprehension, grammar validation, and vocabulary mapping.' },
 };
 
 export default function QuizEngine() {
-  const navigate       = useNavigate();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const section    = searchParams.get('section')    || '';
-  const topic      = searchParams.get('topic')      || '';
+  const section = searchParams.get('section') || '';
+  const topic = searchParams.get('topic') || '';
   const difficulty = searchParams.get('difficulty') || '';
 
   // â”€â”€ Machine states â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [quizStarted,    setQuizStarted]    = useState(false);
-  const [questions,      setQuestions]      = useState([]);
-  const [currentIdx,     setCurrentIdx]     = useState(0);
-  const [selectedAnswers,setSelectedAnswers]= useState({});   // { [idx]: "A"|"B"|"C"|"D" }
-  const [quizCompleted,  setQuizCompleted]  = useState(false);
+  const [quizStarted, setQuizStarted] = useState(false);
+  const [questions, setQuestions] = useState([]);
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [selectedAnswers, setSelectedAnswers] = useState({});   // { [idx]: "A"|"B"|"C"|"D" }
+  const [quizCompleted, setQuizCompleted] = useState(false);
 
   // Submission states
-  const [submitting,     setSubmitting]     = useState(false);
-  const [submitError,    setSubmitError]    = useState(null);
-  const [attemptResult,  setAttemptResult]  = useState(null); // server response
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+  const [attemptResult, setAttemptResult] = useState(null); // server response
 
   // Review mode: show per-question breakdown after results land
-  const [reviewIdx,      setReviewIdx]      = useState(0);
+  const [reviewIdx, setReviewIdx] = useState(0);
 
-  const [loading, setLoading]   = useState(false);
-  const [error,   setError]     = useState(null);
-  const [timeLeft,setTimeLeft]  = useState(600);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(600);
   const timerRef = useRef(null);
 
   const availableTopics = section && quizData.section_topics[section]
@@ -64,8 +64,8 @@ export default function QuizEngine() {
     api.get('/api/v1/hub/quiz', {
       params: {
         limit: 15,
-        ...(section    && { section }),
-        ...(topic      && { topic }),
+        ...(section && { section }),
+        ...(topic && { topic }),
         ...(difficulty && { difficulty }),
       },
     })
@@ -128,7 +128,7 @@ export default function QuizEngine() {
 
     const answers = questions
       .map((q, idx) => ({
-        quiz_id:         q.id,
+        quiz_id: q.id,
         selected_option: selectedAnswers[idx] ?? null,
       }))
       .filter(a => a.selected_option !== null);
@@ -161,7 +161,7 @@ export default function QuizEngine() {
 
   const reviewQuestion = attemptResult?.results[reviewIdx] ?? null;
 
-  const answeredCount   = Object.keys(selectedAnswers).length;
+  const answeredCount = Object.keys(selectedAnswers).length;
   const unansweredCount = questions.length - answeredCount;
 
   // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -206,17 +206,16 @@ export default function QuizEngine() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {quizData.sections.map((secName) => {
-                      const isActive      = section === secName;
-                      const designConfig  = SECTION_ICONS[secName] || { icon: 'school', desc: 'Verify specialized domain criteria matrices.' };
+                      const isActive = section === secName;
+                      const designConfig = SECTION_ICONS[secName] || { icon: 'school', desc: 'Verify specialized domain criteria matrices.' };
                       return (
                         <div
                           key={secName}
                           onClick={() => updateParam('section', isActive ? '' : secName)}
-                          className={`p-4 rounded-xl border cursor-pointer transition-all group ${
-                            isActive
+                          className={`p-4 rounded-xl border cursor-pointer transition-all group ${isActive
                               ? 'bg-primary/10 border-primary shadow-sm'
                               : 'bg-surface-container-low border-border-subtle hover:border-primary/40'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center gap-3 mb-2">
                             <div className={`p-2 rounded-lg transition-colors ${isActive ? 'bg-primary text-white' : 'bg-surface-container-high text-on-surface-variant group-hover:text-primary'}`}>
@@ -292,15 +291,13 @@ export default function QuizEngine() {
                       const isSelected = selectedAnswers[currentIdx] === opt.key;
                       return (
                         <button key={opt.key} onClick={() => handleOptionSelect(opt.key)}
-                          className={`w-full text-left p-3.5 rounded-xl border text-xs flex items-center gap-3.5 transition-all group ${
-                            isSelected
+                          className={`w-full text-left p-3.5 rounded-xl border text-xs flex items-center gap-3.5 transition-all group ${isSelected
                               ? 'bg-primary/10 border-primary text-on-surface'
                               : 'bg-surface-container-low border-border-subtle hover:border-primary/40 text-on-surface-variant hover:text-on-surface'
-                          }`}
+                            }`}
                         >
-                          <div className={`w-5 h-5 rounded-md font-bold flex items-center justify-center transition-colors shrink-0 text-[10px] ${
-                            isSelected ? 'bg-primary text-white' : 'bg-surface-container-high border border-border-subtle'
-                          }`}>
+                          <div className={`w-5 h-5 rounded-md font-bold flex items-center justify-center transition-colors shrink-0 text-[10px] ${isSelected ? 'bg-primary text-white' : 'bg-surface-container-high border border-border-subtle'
+                            }`}>
                             {opt.key}
                           </div>
                           <span className="leading-relaxed flex-1">{opt.text}</span>
@@ -373,20 +370,20 @@ export default function QuizEngine() {
                       <div className="bg-surface-container-low border border-border-subtle p-3.5 rounded-xl">
                         <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">Accuracy</p>
                         <h4 className="text-xl font-bold text-emerald-400 mt-0.5">
-                          {attemptResult ? `${attemptResult.score_pct}%` : 'â€”'}
+                          {attemptResult ? `${attemptResult.score_pct}%` : '--'}
                         </h4>
                       </div>
                       <div className="bg-surface-container-low border border-border-subtle p-3.5 rounded-xl">
                         <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">Correct</p>
                         <h4 className="text-xl font-bold text-emerald-400 mt-0.5">
-                          {attemptResult?.correct ?? 'â€”'}
+                          {attemptResult?.correct ?? '--'}
                           <span className="text-xs text-on-surface-variant font-normal"> /{attemptResult?.total ?? questions.length}</span>
                         </h4>
                       </div>
                       <div className="bg-surface-container-low border border-border-subtle p-3.5 rounded-xl">
                         <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">Wrong</p>
                         <h4 className="text-xl font-bold text-rose-400 mt-0.5">
-                          {attemptResult?.incorrect ?? 'â€”'}
+                          {attemptResult?.incorrect ?? '--'}
                         </h4>
                       </div>
                       <div className="bg-surface-container-low border border-border-subtle p-3.5 rounded-xl">
@@ -419,26 +416,24 @@ export default function QuizEngine() {
                       {/* Options with correct/wrong highlighting */}
                       <div className="grid grid-cols-1 gap-2">
                         {['A', 'B', 'C', 'D'].map(key => {
-                          const text        = reviewQuestion?.[`option_${key.toLowerCase()}`];
-                          const isCorrect   = reviewQuestion?.correct_ans === key;
-                          const isSelected  = reviewQuestion?.selected_option === key;
-                          const isWrong     = isSelected && !isCorrect;
+                          const text = reviewQuestion?.[`option_${key.toLowerCase()}`];
+                          const isCorrect = reviewQuestion?.correct_ans === key;
+                          const isSelected = reviewQuestion?.selected_option === key;
+                          const isWrong = isSelected && !isCorrect;
 
                           return (
                             <div key={key}
-                              className={`p-3 rounded-xl border text-xs flex items-center gap-3 transition-all ${
-                                isCorrect
+                              className={`p-3 rounded-xl border text-xs flex items-center gap-3 transition-all ${isCorrect
                                   ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
                                   : isWrong
-                                  ? 'bg-rose-500/10 border-rose-500/40 text-rose-300'
-                                  : 'bg-surface-container-low border-border-subtle text-on-surface-variant'
-                              }`}
+                                    ? 'bg-rose-500/10 border-rose-500/40 text-rose-300'
+                                    : 'bg-surface-container-low border-border-subtle text-on-surface-variant'
+                                }`}
                             >
-                              <div className={`w-5 h-5 rounded-md font-bold flex items-center justify-center shrink-0 text-[10px] ${
-                                isCorrect ? 'bg-emerald-500 text-white'
-                                : isWrong ? 'bg-rose-500 text-white'
-                                : 'bg-surface-container-high border border-border-subtle'
-                              }`}>
+                              <div className={`w-5 h-5 rounded-md font-bold flex items-center justify-center shrink-0 text-[10px] ${isCorrect ? 'bg-emerald-500 text-white'
+                                  : isWrong ? 'bg-rose-500 text-white'
+                                    : 'bg-surface-container-high border border-border-subtle'
+                                }`}>
                                 {key}
                               </div>
                               <span className="flex-1">{text}</span>
@@ -475,15 +470,14 @@ export default function QuizEngine() {
                         <div className="flex flex-wrap gap-1 justify-center max-w-[200px]">
                           {attemptResult.results.map((r, idx) => (
                             <button key={idx} onClick={() => setReviewIdx(idx)}
-                              className={`w-6 h-6 rounded-md text-[9px] font-bold border transition-all flex items-center justify-center ${
-                                reviewIdx === idx
+                              className={`w-6 h-6 rounded-md text-[9px] font-bold border transition-all flex items-center justify-center ${reviewIdx === idx
                                   ? 'bg-primary border-primary text-white'
                                   : r.is_correct
-                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                                  : !r.selected_option
-                                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                              }`}
+                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                    : !r.selected_option
+                                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                                      : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                                }`}
                             >
                               {idx + 1}
                             </button>
@@ -508,7 +502,7 @@ export default function QuizEngine() {
                   <div>
                     <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Session Clock</p>
                     <h3 className={`text-2xl font-bold font-mono tracking-tight ${quizStarted && !quizCompleted && timeLeft < 60 ? 'text-rose-400 animate-pulse' : 'text-on-surface'}`}>
-                      {quizStarted ? formatTime(timeLeft) : 'â€”â€”'}
+                      {quizStarted ? formatTime(timeLeft) : '——'}
                     </h3>
                     <p className="text-xs text-on-surface-variant mt-0.5">Time Remaining</p>
                   </div>
@@ -524,17 +518,16 @@ export default function QuizEngine() {
                     <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">Pipeline Node Map</p>
                     <div className="flex flex-wrap gap-1.5 pt-0.5">
                       {questions.map((_, idx) => {
-                        const isCurrent  = currentIdx === idx;
+                        const isCurrent = currentIdx === idx;
                         const isAnswered = selectedAnswers[idx] !== undefined;
                         return (
                           <button key={idx} onClick={() => setCurrentIdx(idx)}
-                            className={`w-6 h-6 rounded-md text-[10px] font-bold border transition-all flex items-center justify-center ${
-                              isCurrent
+                            className={`w-6 h-6 rounded-md text-[10px] font-bold border transition-all flex items-center justify-center ${isCurrent
                                 ? 'bg-primary border-primary text-white shadow-sm'
                                 : isAnswered
-                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                                : 'bg-surface-container-low border-border-subtle text-on-surface-variant'
-                            }`}
+                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                  : 'bg-surface-container-low border-border-subtle text-on-surface-variant'
+                              }`}
                           >
                             {idx + 1}
                           </button>

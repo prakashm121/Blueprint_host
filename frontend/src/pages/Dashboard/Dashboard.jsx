@@ -30,8 +30,79 @@ export default function Dashboard() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['dashboardSummary'],
     queryFn: async () => {
-      const response = await api.get('/api/v1/dashboard');
-      return response.data;
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData?.user) throw new Error("No user");
+      const { data: userRow } = await supabase.from('users').select('*').eq('supabase_id', userData.user.id).single();
+      if (!userRow) throw new Error("No user row");
+      
+      const { data: profile } = await supabase.from('profiles').select('*').eq('user_id', userRow.id).single();
+
+      // Fetch active weekly plan
+      const { data: plan } = await supabase.from('weekly_plans')
+        .select('total_tasks, completed_tasks, completion_percentage')
+        .eq('user_id', userRow.id)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      const weekly_total = plan?.total_tasks || 0;
+      const weekly_completed = plan?.completed_tasks || 0;
+      const planner_completion = plan?.completion_percentage || 0;
+
+      // Fetch next milestone
+      let next_milestone = "Complete onboarding to generate your roadmap";
+      const { data: roadmap } = await supabase.from('role_roadmaps').select('id').eq('user_id', userRow.id).maybeSingle();
+      if (roadmap) {
+        const { data: milestone } = await supabase.from('roadmap_milestones')
+          .select('title')
+          .eq('roadmap_id', roadmap.id)
+          .eq('status', 'pending')
+          .order('priority_order', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (milestone) {
+          next_milestone = milestone.title;
+        } else {
+          next_milestone = "All roadmap milestones completed dYZ%";
+        }
+      } else if (profile?.college_name) {
+        next_milestone = "Create your first weekly plan";
+      }
+
+      // Unread notifications
+      const { count: unreadCount } = await supabase.from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userRow.id)
+        .eq('is_read', false);
+
+      // DSA Stats (overall readiness needs it)
+      const { count: dsaSolved } = await supabase.from('user_coding_progress')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userRow.id)
+        .eq('status', 'solved');
+      const dsa_total = 3632; // Assuming a fixed total or fetch dynamically if needed
+
+      const dsa_score = dsa_total > 0 ? Math.min((dsaSolved / dsa_total) * 100, 100) : 0;
+      const weekly_score = weekly_total > 0 ? (weekly_completed / weekly_total * 100) : 0;
+      const overall_readiness = Math.round((dsa_score * 0.5) + (weekly_score * 0.5) * 10) / 10;
+
+      return {
+        profile: {
+          full_name: profile?.full_name || userRow.full_name,
+          college_name: profile?.college_name,
+          degree: profile?.degree,
+          graduation_year: profile?.graduation_year,
+          target_role: userRow.target_role
+        },
+        overall_readiness,
+        weekly_tasks_completed: weekly_completed,
+        weekly_tasks_total: weekly_total,
+        next_milestone,
+        planner_completion,
+        dsa_solved: dsaSolved || 0,
+        dsa_total,
+        unread_notifications_count: unreadCount || 0,
+        focus_tasks: []
+      };
     },
     retry: false,
   });

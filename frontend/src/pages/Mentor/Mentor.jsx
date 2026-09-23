@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api';
+import { supabase } from '../../lib/supabase';
 import { ArrowLeft, Send, Bot, Loader2, PlusCircle, Bookmark } from 'lucide-react';
 
 const SUGGESTIONS = [
@@ -149,11 +150,27 @@ export default function Mentor() {
     }
   };
 
-  const fetchConversations = () => {
-    return api.get('/api/v1/mentor/conversations').then(res => {
-      setConversations(res.data || []);
-      return res.data || [];
-    });
+  const fetchConversations = async () => {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) return [];
+    
+    // We need the internal user ID, but we can query by supabase_id if we join, or just fetch our user row first.
+    const { data: userRow } = await supabase.from('users').select('id').eq('supabase_id', userData.user.id).single();
+    if (!userRow) return [];
+
+    const { data, error } = await supabase
+      .from('mentor_conversations')
+      .select('*')
+      .eq('user_id', userRow.id)
+      .order('updated_at', { ascending: false })
+      .limit(20);
+      
+    if (error) {
+      console.error(error);
+      return [];
+    }
+    setConversations(data || []);
+    return data || [];
   };
 
   const loadConversation = (id) => {
@@ -339,7 +356,7 @@ export default function Mentor() {
                 <h2 className="text-base font-bold text-on-surface tracking-tight">AI Career Coach</h2>
                 <p className="text-[11px] text-success font-medium flex items-center gap-1.5 mt-0.5 tracking-wide">
                   <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.5)]"></span>
-                  Active Â· Grounded in your progress
+                  Active · Grounded in your progress
                 </p>
               </div>
             </div>

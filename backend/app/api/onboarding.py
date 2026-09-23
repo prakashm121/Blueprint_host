@@ -173,51 +173,6 @@ def get_onboarding_status(
     }
 
 
-@router.post("/reset-step")
-def reset_onboarding_step(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(deps.get_current_active_user),
-):
-    """
-    Resets onboarding_step to 'generate_roadmap' for the current user.
-    Safe for test users — does NOT delete any FK-constrained rows.
-    After calling this, the user can POST /generate-roadmap to get a fresh roadmap.
-    Also reachable directly from the Roadmap page via the Generate button.
-    """
-    current_user.onboarding_step = "generate_roadmap"
-    current_user.onboarding_completed_at = None
-    db.commit()
-    return {"success": True, "onboarding_step": "generate_roadmap"}
-
-
-@router.post("/assessment", response_model=StepResponse)
-def submit_assessment(
-    body: AssessmentRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(deps.get_current_active_user),
-):
-    """Step 3 (after goals): save Core Subjects + DSA self-ratings. role=NULL since these are universal."""
-    db.query(UserSkillAssessment).filter(
-        UserSkillAssessment.user_id == current_user.id,
-        UserSkillAssessment.role == None,  # noqa: E711
-        UserSkillAssessment.skill_type.in_(["subject", "dsa"])
-    ).delete()
-
-    for item in body.responses:
-        db.add(UserSkillAssessment(
-            user_id=current_user.id,
-            skill_key=item.skill_key,
-            skill_type=item.skill_type,
-            category=item.category,
-            role=None,   # Core Subjects and DSA are universal across roles
-            self_rated_confidence=item.self_rated_confidence,
-        ))
-
-    current_user.onboarding_step = "role_skills"
-    db.commit()
-    return StepResponse(onboarding_step="role_skills")
-
-
 @router.post("/role-skills", response_model=StepResponse)
 def submit_role_skills(
     body: RoleSkillsRequest,

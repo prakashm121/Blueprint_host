@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../../api';
+import { supabase } from '../../lib/supabase';
 import {
   UploadCloud,
   FileText,
@@ -32,8 +33,19 @@ export default function ResumeAnalyser() {
   const fetchHistory = async () => {
     try {
       setLoadingHistory(true);
-      const res = await api.get('/api/v1/resume/history');
-      setHistory(res.data);
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData?.user) return;
+      const { data: userRow } = await supabase.from('users').select('id').eq('supabase_id', userData.user.id).single();
+      if (!userRow) return;
+
+      const { data, error } = await supabase
+        .from('resume_analyses')
+        .select('*')
+        .eq('user_id', userRow.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setHistory(data || []);
     } catch (err) {
       console.error("Failed to fetch resume history", err);
     } finally {

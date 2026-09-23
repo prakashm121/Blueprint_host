@@ -1,7 +1,6 @@
 from fastapi import Depends, HTTPException, status, Cookie, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
-from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from functools import lru_cache
 import requests
