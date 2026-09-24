@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import { useAuthStore } from './store/authStore';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Landing from './pages/Landing/Landing';
 import Login from './pages/Auth/Login';
 import Register from './pages/Auth/Register';
@@ -21,6 +21,21 @@ import VaultDashboard from './pages/Vault/VaultDashboard';
 import Profile from './pages/Profile/Profile';
 import ResumeAnalyser from './pages/ResumeAnalyser/ResumeAnalyser';
 import Subjects from './pages/Subjects/Subjects';
+
+function LandingRoute() {
+  const token = useAuthStore((state) => state.token);
+  const isAuthLoading = useAuthStore((state) => state.isAuthLoading);
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="animate-pulse text-slate-400">Initializing...</div>
+      </div>
+    );
+  }
+
+  return token ? <Navigate to="/dashboard" replace /> : <Landing />;
+}
 
 function App() {
   const setAuth = useAuthStore((state) => state.setAuth);
@@ -59,7 +74,7 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Landing />} />
+        <Route path="/" element={<LandingRoute />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/check-email" element={<CheckEmail />} />
