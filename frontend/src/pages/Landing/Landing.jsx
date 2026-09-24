@@ -59,7 +59,7 @@ function PartsSection({ sectionRef }) {
   }, [inView, hovered]);
 
   return (
-    <section ref={sectionRef} className="scroll-mt-16 bg-surface-dim py-20 sm:py-28">
+    <section ref={sectionRef} className="scroll-mt-16 bg-surface-dim py-14 sm:py-20 lg:py-28">
       <div ref={viewRef} className="mx-auto grid max-w-6xl gap-10 px-5 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] lg:gap-14">
         <div className="lg:sticky lg:top-24 lg:self-start">
           <Reveal>
@@ -215,7 +215,7 @@ export default function Landing() {
 
       <main>
         {/* ── Hero ──────────────────────────────────────────────────── */}
-        <section className="blueprint-grid relative overflow-hidden pb-12 pt-28 sm:pt-32 lg:pb-16 lg:pt-32">
+        <section className="blueprint-grid relative overflow-hidden pb-8 pt-24 sm:pb-12 sm:pt-32 lg:pb-16 lg:pt-32">
           <div className="mx-auto grid max-w-6xl items-center gap-6 px-5 sm:px-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6">
             {/* One orchestrated entrance: headline, copy and actions rise in turn. */}
             <div className="stagger-in max-w-xl">
@@ -242,14 +242,14 @@ export default function Landing() {
                 progress={5 / 12}
                 labels={HERO_LABELS}
                 label="3D model of an example 12-week plan built as a tower, one floor per week. Weeks 1 to 5 are built, week 6, system design, is lit up as this week while a crane lifts the next floor, and the offer flag sits at the top."
-                className="aspect-square w-full sm:aspect-[6/5] lg:aspect-square"
+                className="aspect-[10/9] w-full sm:aspect-[6/5] lg:aspect-square"
                 fallback={
                   <div className="crop-marks">
                     <HeroDrawing />
                   </div>
                 }
               />
-              <p className="-mt-3 text-center text-xs text-line" style={{ animation: 'fade-in 0.6s ease 2.4s both' }}>
+              <p className="mt-1 text-center text-xs text-line sm:-mt-3" style={{ animation: 'fade-in 0.6s ease 2.4s both' }}>
                 Drag the model to turn it
               </p>
             </div>
@@ -263,7 +263,7 @@ export default function Landing() {
         <WeekDemo />
 
         {/* ── How it works ──────────────────────────────────────────── */}
-        <section ref={stepsRef} className="scroll-mt-16 border-t border-border-subtle bg-surface-dim py-20 sm:py-28">
+        <section ref={stepsRef} className="scroll-mt-16 border-t border-border-subtle bg-surface-dim py-14 sm:py-20 lg:py-28">
           <div className="mx-auto max-w-6xl px-5 sm:px-8">
             <Reveal>
               <h2 className="type-title max-w-2xl text-3xl text-paper sm:text-[2.6rem]">From sign-in to a plan in four steps.</h2>
@@ -291,7 +291,7 @@ export default function Landing() {
         </div>
 
         {/* ── Closing ───────────────────────────────────────────────── */}
-        <section className="blueprint-grid border-t border-border-subtle py-20 sm:py-28">
+        <section className="blueprint-grid border-t border-border-subtle py-14 sm:py-20 lg:py-28">
           <div className="mx-auto max-w-6xl px-5 sm:px-8">
             <Reveal className="crop-marks mx-auto max-w-2xl border border-paper/40 bg-background-deep/80 px-6 py-12 text-center sm:px-12">
               <h2 className="type-display text-4xl text-paper sm:text-5xl">Start drawing your plan.</h2>

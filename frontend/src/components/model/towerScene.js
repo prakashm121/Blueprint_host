@@ -533,7 +533,8 @@ export function createTowerScene(container, opts) {
     canvas.style.height = `${h}px`;
     camera.aspect = w / h;
     // Labelled models need room at the sides for their labels, more so on narrow screens.
-    const labelRoom = labels.length ? (w < 420 ? 1.35 : w < 560 ? 1.18 : 1) : 1;
+    // Labels are clamped inside the frame, so only a little extra room is needed for them.
+    const labelRoom = labels.length ? (w < 560 ? 1.08 : 1) : 1;
     const [needW, needH] = cfg.fit;
     const t = Math.tan((camera.fov * Math.PI) / 360);
     const dist = Math.max(needH / 2 / t, (needW * labelRoom) / 2 / (t * camera.aspect));
@@ -599,7 +600,10 @@ export function createTowerScene(container, opts) {
         const x = (v.x * 0.5 + 0.5) * w;
         if (!best || (side === 'right' ? x > best.x : x < best.x)) best = { x, y: (-v.y * 0.5 + 0.5) * h };
       }
-      el.style.transform = `translate(${best.x}px, ${best.y}px) translate(${side === 'right' ? '0' : '-100%'}, -50%)`;
+      // Keep the whole label inside the frame, even as the model turns towards the edge.
+      const lw = el.offsetWidth;
+      const x = side === 'right' ? Math.min(best.x, w - lw - 4) : Math.max(best.x, lw + 4);
+      el.style.transform = `translate(${x}px, ${best.y}px) translate(${side === 'right' ? '0' : '-100%'}, -50%)`;
       const shown = !animateBuild || elapsed > f.solidAt + 0.3;
       if (el.dataset.shown !== String(shown)) el.dataset.shown = String(shown);
     }

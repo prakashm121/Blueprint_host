@@ -36,7 +36,7 @@ export default function WeekDemo() {
   const minutesLeft = TASKS.slice(done).reduce((a, t) => a + t.minutes, 0);
 
   return (
-    <section className="py-20 sm:py-28">
+    <section className="py-14 sm:py-20 lg:py-28">
       <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 sm:px-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-16">
         <Reveal>
           <h2 className="type-title text-3xl text-paper sm:text-[2.6rem]">Tick a task, raise a floor.</h2>

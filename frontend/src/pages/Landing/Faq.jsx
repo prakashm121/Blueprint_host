@@ -58,7 +58,7 @@ function Item({ q, a, open, onToggle }) {
 export default function Faq() {
   const [open, setOpen] = useState(0);
   return (
-    <section className="border-t border-border-subtle py-20 sm:py-28">
+    <section className="border-t border-border-subtle py-14 sm:py-20 lg:py-28">
       <div className="mx-auto grid max-w-6xl gap-10 px-5 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-16">
         <Reveal>
           <h2 className="type-title text-3xl text-paper sm:text-[2.6rem]">Questions students ask.</h2>
