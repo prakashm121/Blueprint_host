@@ -76,7 +76,7 @@ export default function PlanModel({
       ref={containerRef}
       role="img"
       aria-label={label}
-      className={`relative transition-[opacity,transform] duration-700 ease-[var(--ease-settle)] ${
+      className={`relative min-w-0 transition-[opacity,transform] duration-700 ease-[var(--ease-settle)] ${
         status === 'ready' ? 'scale-100 opacity-100' : 'scale-[0.97] opacity-0'
       } ${className}`}
     >

@@ -5,7 +5,7 @@ import PlanModel from '../../components/model/PlanModel';
 export default function NotFound() {
   return (
     <div className="animate-page-in blueprint-grid flex min-h-screen items-center justify-center bg-background-deep px-5 py-16 text-paper">
-      <div className="grid w-full max-w-4xl items-center gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:gap-10">
+      <div className="grid w-full max-w-4xl grid-cols-[minmax(0,1fr)] items-center gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:gap-10">
         {/* A floor knocked out of the tower: the page that should be here. */}
         <PlanModel
           variant="broken"

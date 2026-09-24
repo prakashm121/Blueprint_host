@@ -181,7 +181,12 @@ export function createTowerScene(container, opts) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFShadowMap;
   const canvas = renderer.domElement;
+  // Fill the container rather than holding a pixel size: a canvas with a fixed width would stop
+  // its container (and the page layout around it) from shrinking when the window gets narrower.
   canvas.style.display = 'block';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.maxWidth = '100%';
   canvas.style.touchAction = 'pan-y'; // vertical swipes still scroll the page
   canvas.setAttribute('aria-hidden', 'true');
   if (interactive) canvas.style.cursor = 'grab';
@@ -528,9 +533,7 @@ export function createTowerScene(container, opts) {
   function frame() {
     const { clientWidth: w, clientHeight: h } = container;
     if (!w || !h) return;
-    renderer.setSize(w, h, false);
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
+    renderer.setSize(w, h, false); // drawing buffer only; CSS size stays 100%
     camera.aspect = w / h;
     // Labelled models need room at the sides for their labels, more so on narrow screens.
     // Labels are clamped inside the frame, so only a little extra room is needed for them.

@@ -60,7 +60,7 @@ function PartsSection({ sectionRef }) {
 
   return (
     <section ref={sectionRef} className="scroll-mt-16 bg-surface-dim py-14 sm:py-20 lg:py-28">
-      <div ref={viewRef} className="mx-auto grid max-w-6xl gap-10 px-5 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] lg:gap-14">
+      <div ref={viewRef} className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] gap-10 px-5 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] lg:gap-14">
         <div className="lg:sticky lg:top-24 lg:self-start">
           <Reveal>
             <h2 className="type-title text-3xl text-paper sm:text-[2.6rem]">Everything the plan draws on.</h2>
@@ -216,7 +216,7 @@ export default function Landing() {
       <main>
         {/* ── Hero ──────────────────────────────────────────────────── */}
         <section className="blueprint-grid relative overflow-hidden pb-8 pt-24 sm:pb-12 sm:pt-32 lg:pb-16 lg:pt-32">
-          <div className="mx-auto grid max-w-6xl items-center gap-6 px-5 sm:px-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6">
+          <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] items-center gap-6 px-5 sm:px-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6">
             {/* One orchestrated entrance: headline, copy and actions rise in turn. */}
             <div className="stagger-in max-w-xl">
               <h1 className="type-display text-balance text-[2.15rem] text-paper sm:text-[3.4rem] lg:text-[3.2rem] lg:[font-stretch:110%] xl:text-[3.45rem]">
