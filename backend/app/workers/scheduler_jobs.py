@@ -1,27 +1,31 @@
 """
 scheduler_jobs.py — Background scan jobs for scheduled events.
 
-scan_due_planner_tasks(): hourly job — finds tasks that are due and enqueues
-reminder notifications + emails via the outbox pattern.
+scan_due_planner_tasks(): hourly job — finds tasks that are due and writes
+an in-app reminder notification directly (no outbox/Celery — this is a
+plain synchronous DB write, triggered by an external scheduler hitting
+POST /api/v1/internal/scan-planner-reminders; see app/api/internal.py).
 
 Note: reconcile_stuck_generations() was removed in Phase 4 — planner generation
 is now inline (synchronous), so there are no background jobs that can get stuck.
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from app.db.session import SessionLocal
 from app.models.planner import PlannerTask
 from app.models.user import User
-from app.workers import event_types as ET
-from app.workers.outbox import enqueue_outbox
+from app.services.notification_service import notify_planner_reminder
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("placementos.scheduler_jobs")
 
 
-def scan_due_planner_tasks() -> None:
-    """Find tasks that are due today (after 20:00 IST) or overdue, enqueue notification + email."""
+def scan_due_planner_tasks() -> int:
+    """Find tasks that are due today (after 20:00 IST) or overdue, write reminder notifications.
+
+    Returns the number of reminders sent.
+    """
     db = SessionLocal()
     try:
         now_utc = datetime.now(timezone.utc)
@@ -39,7 +43,7 @@ def scan_due_planner_tasks() -> None:
             .all()
         )
 
-        enqueued = 0
+        sent = 0
         for task in tasks:
             due = task.due_date
             if due.tzinfo is None:
@@ -56,42 +60,26 @@ def scan_due_planner_tasks() -> None:
             if due_date == today_ist and now_ist.hour < 20:
                 continue
 
-            # Overdue or today-after-20:00 — enqueue reminder
+            # Overdue or today-after-20:00 — write the reminder
             user = db.query(User).filter(User.id == task.user_id).first()
             if not user:
                 continue
 
             due_label = "today" if due_date == today_ist else "overdue"
-            name = user.profile.full_name if user.profile else user.full_name
-            base_key = f"planner-reminder:{task.id}:{due_date.isoformat()}"
 
-            enqueue_outbox(
-                db,
-                ET.NOTIFICATION_PLANNER_REMINDER,
-                {"user_id": user.id, "task_title": task.title, "due_label": due_label},
-                idempotency_key=f"{base_key}:notification",
-            )
-            enqueue_outbox(
-                db,
-                ET.EMAIL_PLANNER_REMINDER,
-                {
-                    "email": user.email,
-                    "full_name": name,
-                    "task_title": task.title,
-                    "due_label": due_label,
-                },
-                idempotency_key=f"{base_key}:email",
-            )
+            notify_planner_reminder(db, user.id, task.title, due_label)
 
             task.reminder_sent = True
             db.add(task)
-            enqueued += 1
+            sent += 1
 
-        if enqueued:
+        if sent:
             db.commit()
-            logger.info("Planner reminder events enqueued: %d", enqueued)
+            logger.info("Planner reminders sent: %d", sent)
+        return sent
     except Exception:
         logger.exception("Planner reminder scan failed")
         db.rollback()
+        raise
     finally:
         db.close()

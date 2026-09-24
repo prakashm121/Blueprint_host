@@ -11,7 +11,6 @@ import Planner from './pages/Planner/Planner';
 import Roadmap from './pages/Roadmap/Roadmap';
 import Mentor from './pages/Mentor/Mentor';
 import CheckEmail from './pages/Auth/CheckEmail';
-import VerifyEmail from './pages/Auth/VerifyEmail';
 import NotFound from './pages/Misc/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
 import DSAEngine from './pages/InterviewHub/DSAEngine';
@@ -26,6 +25,7 @@ import Subjects from './pages/Subjects/Subjects';
 function App() {
   const setAuth = useAuthStore((state) => state.setAuth);
   const logout = useAuthStore((state) => state.logout);
+  const setAuthLoading = useAuthStore((state) => state.setAuthLoading);
 
   useEffect(() => {
     // Check initial session
@@ -37,6 +37,9 @@ function App() {
         logout();
         document.cookie = 'sb_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       }
+      setAuthLoading(false);
+    }).catch(() => {
+      setAuthLoading(false);
     });
 
     // Listen for auth changes
@@ -60,7 +63,6 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/check-email" element={<CheckEmail />} />
-        <Route path="/auth/verify" element={<VerifyEmail />} />
 
         <Route element={<ProtectedRoute />}>
           <Route path="/onboarding" element={<Onboarding />} />

@@ -67,7 +67,7 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
                 {t}
               </Link>
             ))}
-            {topics.length > 0 && <span className="text-border-subtle">â€¢</span>}
+            {topics.length > 0 && <span className="text-border-subtle">&bull;</span>}
             <span>Acceptance: <span className="text-on-surface font-medium">{acceptance}</span></span>
           </div>
 
@@ -204,7 +204,7 @@ export default function DSAEngine() {
                 <span className="text-xs text-emerald-400 font-bold">{stats?.easy_solved ?? 0} Easy</span>
                 <span className="text-xs text-amber-400 font-bold">{stats?.medium_solved ?? 0} Med</span>
                 <span className="text-xs text-rose-400 font-bold">{stats?.hard_solved ?? 0} Hard</span>
-                <span className="text-xs text-on-surface-variant">ðŸ”¥ {stats?.streak ?? 0} days</span>
+                <span className="text-xs text-on-surface-variant">&#128293; {stats?.streak ?? 0} days</span>
               </div>
             </>
           )}

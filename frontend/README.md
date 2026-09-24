@@ -1,6 +1,6 @@
 # Blueprint — Frontend
 
-A React + Vite SPA for the Blueprint placement preparation platform. Connects to the Blueprint backend API for auth, onboarding, dashboard, planner, interview hub, AI mentor, vault, and notifications.
+React 19 + Vite SPA for the Blueprint placement-prep platform. Auth is Supabase Google OAuth only — there's no email/password flow. Data fetching is a **hybrid model**: some pages go through the FastAPI backend, others query Supabase directly (with RLS) for reads.
 
 ---
 
@@ -10,9 +10,11 @@ A React + Vite SPA for the Blueprint placement preparation platform. Connects to
 - [Project structure](#project-structure)
 - [Quick start](#quick-start)
 - [Environment variables](#environment-variables)
-- [Pages and routes](#pages-and-routes)
+- [Routes](#routes)
+- [Auth](#auth)
+- [Data fetching — the hybrid model](#data-fetching--the-hybrid-model)
 - [State management](#state-management)
-- [API layer](#api-layer)
+- [Known gaps](#known-gaps)
 
 ---
 
@@ -20,12 +22,20 @@ A React + Vite SPA for the Blueprint placement preparation platform. Connects to
 
 | Layer | Technology |
 |---|---|
-| Framework | React 18 |
-| Build tool | Vite |
-| Routing | React Router |
-| State | Zustand |
-| Validation | Zod |
-| Styling | CSS (App.css + index.css) |
+| Framework | React 19 |
+| Build tool | Vite (+ `@vitejs/plugin-react`) |
+| Routing | React Router 7 |
+| Server-state cache | `@tanstack/react-query` — used in ~12 pages, not just "fetch on mount" |
+| Client state | Zustand — just auth (`user`, `token`, `isAuthLoading`) |
+| Backend/Auth client | `@supabase/supabase-js` — auth session + direct DB queries for several pages |
+| HTTP client (backend API) | Axios (`src/api.js`) |
+| Styling | Tailwind CSS v4, via the first-party `@tailwindcss/vite` plugin |
+| Icons | `lucide-react` |
+| Markdown rendering | `react-markdown` + `remark-gfm` (mentor chat) |
+| 3D graphics | `three` (landing page hero) |
+| Linting | `oxlint` (the actual `lint` script — `eslint` is present but not what's wired up) |
+
+Not used, despite older docs claiming otherwise: **Zod** (not a dependency, no usage anywhere).
 
 ---
 
@@ -34,58 +44,48 @@ A React + Vite SPA for the Blueprint placement preparation platform. Connects to
 ```
 frontend/
 ├── index.html
-├── vite.config.js
+├── vite.config.js                  # react() + tailwindcss() plugins only, no aliases/proxy
+├── vercel.json                     # single SPA rewrite rule for client-side routing
 ├── package.json
-├── .env.example
-│
-├── public/
-│   ├── favicon.svg
-│   └── icons.svg
+├── .env                            # no .env.example currently checked in
 │
 └── src/
-    ├── main.jsx                        # React entry point
-    ├── App.jsx                         # Router setup, route definitions
-    ├── api.js                          # Axios instance + all API call functions
-    ├── App.css
+    ├── main.jsx                    # React entry point
+    ├── App.jsx                     # Router + Supabase session bootstrap (see Auth)
+    ├── api.js                      # Axios instance for the FastAPI backend
     ├── index.css
     │
-    ├── assets/
-    │   ├── LogoBlueprint.png
+    ├── lib/
+    │   └── supabase.js             # Supabase client (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)
     │
     ├── components/
-    │   ├── Layout.jsx                  # Main wrapper layout with Sidebar
-    │   ├── Sidebar.jsx                 # Persistent global navigation sidebar
-    │   └── ProtectedRoute.jsx          # Wraps routes that require auth
+    │   ├── Layout.jsx               # Sidebar + <Outlet/> shell for protected pages
+    │   ├── Sidebar.jsx               # Nav + mounts Notifications as a slide-over panel
+    │   └── ProtectedRoute.jsx        # Auth gate — checks session + onboarding_completed
     │
-    ├── data/                           # Static filter config (no API call needed)
-    │   ├── filters.json                # DSA topic + company filter options
-    │   ├── qa_filters.json             # Interview Q&A category + role filters
-    │   └── quiz_filters.json           # Quiz section + topic filters
+    ├── data/                        # Static filter option mirrors (no API round-trip)
+    │   ├── filters.json
+    │   ├── qa_filters.json
+    │   └── quiz_filters.json
     │
     ├── pages/
-    │   ├── Auth/                       # Login.jsx, Register.jsx, CheckEmail.jsx, VerifyEmail.jsx
-    │   ├── Landing/                    # Landing.jsx (Public landing page)
-    │   ├── Dashboard/                  # Dashboard.jsx (Readiness score + summary cards)
-    │   ├── Planner/                    # Planner.jsx (Weekly plan + task management)
-    │   ├── Mentor/                     # Mentor.jsx (AI mentor chat)
-    │   ├── Onboarding/                 # Onboarding.jsx (Target role, companies, skills)
-    │   ├── Notifications/              # Notifications.jsx (In-app notification feed)
-    │   ├── Profile/                    # Profile.jsx
-    │   ├── Roadmap/                    # Roadmap.jsx
-    │   ├── ResumeAnalyser/             # ResumeAnalyser.jsx (Upload, ATS scoring, Feedback, History)
-    │   ├── Misc/                       # NotFound.jsx (404 page)
-    │   │
-    │   ├── InterviewHub/
-    │   │   ├── DSAEngine.jsx           # DSA problem list — filters, keyset pagination
-    │   │   ├── DSAProblemDetail.jsx    # Full problem view — HTML content + code panel
-    │   │   ├── InterviewQAEngine.jsx   # Q&A list — category, skill, role filters
-    │   │   └── QuizEngine.jsx          # MCQ quiz — section/topic filters, answer flow
-    │   │
-    │   └── Vault/
-    │       └── VaultDashboard.jsx      # Knowledge vault — bookmarks, AI insights, notes
+    │   ├── Landing/                 # Landing.jsx, GraphBackground.jsx, BlueprintScene.jsx (three.js), landingData.js
+    │   ├── Auth/                    # Login.jsx (Google OAuth), Register.jsx (redirect stub → /login), CheckEmail.jsx
+    │   ├── Onboarding/               # Multi-step wizard — role, skills, goals
+    │   ├── Dashboard/                # Readiness score + summary — queries Supabase directly
+    │   ├── Planner/                  # Weekly plan + tasks
+    │   ├── Roadmap/                  # Role roadmap view + generate
+    │   ├── Mentor/                   # AI mentor chat (SSE streaming)
+    │   ├── InterviewHub/             # DSAEngine, DSAProblemDetail, InterviewQAEngine, QuizEngine
+    │   ├── Vault/                    # VaultDashboard (bookmarks/AI insights/notes)
+    │   ├── Profile/                  # Profile edit form
+    │   ├── ResumeAnalyser/           # Upload, async polling, ATS score + feedback breakdown, history
+    │   ├── Subjects/                 # Subject confidence self-assessment
+    │   ├── Notifications/            # Notification feed (rendered from Sidebar, not routed)
+    │   └── Misc/NotFound.jsx
     │
     └── store/
-        └── authStore.js                # Zustand store — tokens, user, login/logout
+        └── authStore.js              # Zustand — { user, token, isAuthLoading, setAuth(), logout(), setAuthLoading() }
 ```
 
 ---
@@ -93,16 +93,13 @@ frontend/
 ## Quick start
 
 ```powershell
-cd Workspace\frontend
+cd frontend
 npm install
-copy .env.example .env
-# set VITE_API_URL in .env
+# create .env with VITE_API_URL / VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY — see below
 npm run dev
 ```
 
 - App: http://localhost:5173
-
-Build for production:
 
 ```powershell
 npm run build
@@ -114,64 +111,88 @@ npm run preview
 ## Environment variables
 
 ```env
-VITE_API_URL=http://localhost:8000/api/v1
+VITE_API_URL=http://localhost:8000        # see the mismatch note below
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
 ```
+
+**Known mismatch**: `src/api.js` actually reads `import.meta.env.VITE_API_BASE_URL`, not `VITE_API_URL`. The checked-in `.env` sets `VITE_API_URL`, which the code never reads — so in practice `api.js` silently falls back to its hardcoded default (`http://localhost:8000`). This works by accident in local dev (that's the right default anyway) but **will break in any deployed environment** unless `VITE_API_BASE_URL` (not `VITE_API_URL`) is the variable actually set on Vercel. Fix one side or the other before deploying to a new environment.
 
 ---
 
-## Pages and routes
+## Routes
 
-| Path | Component | Auth required |
+| Path | Component | Protected |
 |---|---|---|
 | `/` | `Landing` | No |
-| `/register` | `Register` | No |
-| `/login` | `Login` | No |
+| `/login` | `Login` (Google OAuth via Supabase) | No |
+| `/register` | redirects to `/login` — registration and login are the same OAuth flow | No |
 | `/check-email` | `CheckEmail` | No |
-| `/auth/verify` | `VerifyEmail` | No |
 | `/onboarding` | `Onboarding` | Yes |
 | `/dashboard` | `Dashboard` | Yes |
 | `/planner` | `Planner` | Yes |
+| `/roadmap` | `Roadmap` | Yes |
+| `/mentor` | `Mentor` | Yes |
 | `/interview-hub/dsa` | `DSAEngine` | Yes |
 | `/interview-hub/dsa/:id` | `DSAProblemDetail` | Yes |
 | `/interview-hub/qa` | `InterviewQAEngine` | Yes |
 | `/interview-hub/quiz` | `QuizEngine` | Yes |
-| `/mentor` | `Mentor` | Yes |
 | `/vault` | `VaultDashboard` | Yes |
+| `/profile` | `Profile` | Yes |
 | `/resume-analyser` | `ResumeAnalyser` | Yes |
-| `/notifications` | `Notifications` | Yes |
+| `/subjects` | `Subjects` | Yes |
 | `*` | `NotFound` | No |
 
-Protected routes are wrapped in `ProtectedRoute.jsx` which reads auth state from Zustand and redirects to `/login` if unauthenticated.
+Notifications are a slide-over panel mounted from `Sidebar.jsx`, not a routed page.
+
+---
+
+## Auth
+
+Auth is Supabase's own session — there is no custom register/login call to the backend:
+
+- `Login.jsx` calls `supabase.auth.signInWithOAuth({ provider: 'google' })`. That's the only sign-in method; there's no password form.
+- `App.jsx` bootstraps auth on mount via `supabase.auth.getSession()` and stays in sync via `supabase.auth.onAuthStateChange()`. On a session, it calls `setAuth(user, access_token)` and mirrors the token into an `sb_access_token` cookie; on sign-out it clears both.
+- `ProtectedRoute.jsx` reads the Zustand auth state and additionally calls `GET /api/v1/auth/me` to check `onboarding_completed`, redirecting to `/login` or `/onboarding` as appropriate.
+- `src/api.js`'s request interceptor attaches `Authorization: Bearer <token>` (the Supabase access token) to every backend API call. **There's no response interceptor** — no automatic 401/refresh-retry logic. If a token expires mid-session, the request just fails; the user has to be redirected by the auth-state listener picking up the change, not by axios retrying.
+
+---
+
+## Data fetching — the hybrid model
+
+This is the single most important architectural fact for understanding the frontend: **not everything goes through the FastAPI backend.** A meaningful chunk of pages query Supabase directly (RLS-protected) instead:
+
+**Through the backend API (`src/api.js` / axios):** Onboarding, Roadmap, Notifications, Profile, resume upload/history.
+
+**Direct Supabase queries (`supabase.from(...)`, RLS-enforced) — reads bypass the backend entirely:**
+- `Dashboard.jsx` — `users`, `profiles`, `weekly_plans`, `role_roadmaps`, `roadmap_milestones`, `notifications`, `user_coding_progress`, `dsa_problems`, `user_quiz_sessions`
+- `DSAEngine.jsx` — `dsa_problems`
+- `DSAProblemDetail.jsx` — `dsa_problems`, `users`, `vault_items`
+- `InterviewQAEngine.jsx` — `interview_questions`, `users`, `vault_items`
+- `Planner.jsx` — `profiles`
+- `Mentor.jsx` — `users` directly, but mentor *messages* go straight to the backend via `fetch(VITE_API_BASE_URL + ...)`, not through `api.js`
+- `ResumeAnalyser.jsx` — `users`
+- `VaultDashboard.jsx` — `@tanstack/react-query`'s `useInfiniteQuery` against Supabase `vault_items`
+
+If you're adding a new page, decide deliberately which model fits: backend API when there's business logic, AI calls, or write validation involved; direct Supabase reads when it's a simple RLS-scoped query and the round-trip through FastAPI would just be a pass-through.
 
 ---
 
 ## State management
 
-`authStore.js` (Zustand) holds:
+`authStore.js` (Zustand) is intentionally thin — it only holds auth state:
 
 ```js
-{
-  user,           // user object from /profile
-  accessToken,    // JWT access token
-  refreshToken,   // JWT refresh token
-  isAuthenticated,
-  login(),        // stores tokens + user
-  logout(),       // clears state
-  setUser(),      // updates user after profile changes
-}
+{ user, token, isAuthLoading, setAuth(user, token), logout(), setAuthLoading() }
 ```
 
-All other data (hub questions, planner tasks, vault items) is fetched locally per page — no global store for server data.
+Everything else — hub content, planner tasks, vault items, resume analysis status — is server state, fetched per page via either React Query or a direct Supabase call. There is no global store for that data; React Query's cache is the closest thing to one, scoped per query key.
 
 ---
 
-## API layer
+## Known gaps
 
-All backend calls go through `src/api.js` which exports:
-
-- An Axios instance with `VITE_API_URL` as the base URL
-- Request interceptor — attaches `Authorization: Bearer <accessToken>` from Zustand on every request
-- Response interceptor — on 401, attempts token refresh via `/auth/refresh`, retries the original request, logs out on failure
-- Named functions for every endpoint (e.g. `getProfile()`, `listDSAProblems(filters)`, `sendMentorMessage(convId, text)`)
-
-Filter options for the hub pages are loaded from the static JSON files in `src/data/` rather than hitting the API on every page load — these are pre-seeded values that match what the backend stores in Redis metadata.
+- **`VITE_API_URL` vs `VITE_API_BASE_URL` mismatch** — see [Environment variables](#environment-variables). Confirm which one is actually configured wherever this is deployed.
+- **No response interceptor / token refresh** in `api.js` — a 401 just fails the request rather than transparently retrying after a session refresh.
+- **No `.env.example`** checked into `frontend/` — only a real `.env`. Worth adding one (with blank values) so new contributors don't have to guess variable names.
+- Two data-fetching paths (backend API vs direct Supabase) with no single documented rule for which a new feature should use — see [Data fetching](#data-fetching--the-hybrid-model) for the current de facto pattern.

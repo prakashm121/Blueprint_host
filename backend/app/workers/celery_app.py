@@ -1,18 +1,20 @@
-"""Celery application — replaces APScheduler + arq (App Flow §14.9).
+﻿"""Celery application — handles the resume-analysis background job only.
 
-Run worker (Windows/Upstash optimized):  
+No Celery Beat: the one genuine periodic job (planner reminders) is
+triggered by an external scheduler (GitHub Actions) hitting
+POST /api/v1/internal/scan-planner-reminders directly, not by Beat.
+
+Run worker (Windows/Upstash optimized):
 celery -A app.workers.celery_app worker --loglevel=info --pool=solo --without-gossip --without-mingle --without-heartbeat
-
-Run beat:    
-celery -A app.workers.celery_app beat --loglevel=info
 """
 
 import os
 from celery import Celery
-from celery.schedules import crontab
 from app.core.config import settings
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", settings.REDIS_URL)
+if CELERY_BROKER_URL and CELERY_BROKER_URL.startswith("rediss://") and "?" not in CELERY_BROKER_URL:
+    CELERY_BROKER_URL += "?ssl_cert_reqs=CERT_NONE"
 
 celery_app = Celery(
     "placementos_workers",
@@ -32,15 +34,6 @@ celery_app.conf.update(
     }
 )
 
-celery_app.conf.beat_schedule = {
-    "process-outbox-every-10-seconds": {
-        "task": "app.workers.celery_tasks.process_outbox_task",
-        "schedule": 10.0,
-    },
-    "scan-planner-reminders-hourly": {
-        "task": "app.workers.celery_tasks.scan_planner_reminders_task",
-        "schedule": crontab(minute=0),
-    },
-}
+celery_app.autodiscover_tasks(['app.workers.tasks'], related_name='ai_tasks')
 
-celery_app.autodiscover_tasks(["app.workers"], related_name="celery_tasks")
+

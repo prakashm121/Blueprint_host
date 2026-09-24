@@ -6,6 +6,7 @@ import Layout from './Layout';
 
 export default function ProtectedRoute() {
   const token = useAuthStore((state) => state.token);
+  const isAuthLoading = useAuthStore((state) => state.isAuthLoading);
   const location = useLocation();
   const [onboardingDone, setOnboardingDone] = useState(null);
 
@@ -15,6 +16,14 @@ export default function ProtectedRoute() {
       .then((res) => setOnboardingDone(res.data.onboarding_completed))
       .catch(() => setOnboardingDone(true));
   }, [token]);
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="animate-pulse text-slate-400">Initializing...</div>
+      </div>
+    );
+  }
 
   if (!token) {
     return <Navigate to="/login" replace />;

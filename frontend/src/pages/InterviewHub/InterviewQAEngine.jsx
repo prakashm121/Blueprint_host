@@ -308,7 +308,7 @@ export default function InterviewQAEngine() {
                       </h4>
                       <div className="flex items-center justify-between gap-2 pt-1">
                         <span className="text-[9px] px-1.5 py-0.5 bg-surface-container-low text-on-surface-variant rounded border border-border-subtle truncate max-w-[180px]">
-                          {q.skill ? `${q.category} â€¢ ${q.skill}` : q.category}
+                          {q.skill ? `${q.category} &bull; ${q.skill}` : q.category}
                         </span>
                         <span className={`text-[9px] font-bold uppercase tracking-wider ${
                           q.difficulty === 'Easy' ? 'text-emerald-400' : q.difficulty === 'Medium' ? 'text-amber-400' : 'text-rose-400'

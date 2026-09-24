@@ -1,4 +1,4 @@
-from datetime import date, timedelta, datetime, timezone
+﻿from datetime import date, timedelta, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case
 from sqlalchemy.orm import Session
@@ -12,15 +12,12 @@ from app.models.user import User
 from app.models.planner import WeeklyPlan, PlannerTask
 from app.models.assessment import UserSkillAssessment
 from app.services.context_builder import build_daily_planner_context, build_weekly_plan_context
-from app.services.ai_service import generate_weekly_tasks_async, generate_daily_breakdown_async
-from app.workers.outbox import enqueue_outbox
-from app.workers import event_types as ET
-
+from app.services.roadmap.service import generate_weekly_tasks_async, generate_daily_breakdown_async
 router = APIRouter()
 
 _HIDDEN = ("Archived", "Deleted")
 
-# Category → skill_key mapping for passive confidence nudge on task completion (Phase 2)
+# Category â†’ skill_key mapping for passive confidence nudge on task completion (Phase 2)
 PLANNER_CATEGORY_TO_SKILL_KEY = {
     "OS":                  "operating_systems",
     "Operating Systems":   "operating_systems",
@@ -148,10 +145,20 @@ async def get_daily_plan(
     if task_titles:
         schedule = await generate_daily_breakdown_async(task_titles, body.available_minutes)
         if schedule:
-            # Assign fake IDs to AI sub-tasks so frontend keys/checkboxes work
+            # Assign fake IDs to AI sub-tasks so frontend keys/checkboxes work.
+            # AI gateway may return Pydantic objects; normalise to dicts first.
+            normalised = []
             for i, task in enumerate(schedule):
-                if "id" not in task:
-                    task["id"] = 90000 + i
+                if hasattr(task, "model_dump"):
+                    task_dict = task.model_dump()
+                elif isinstance(task, dict):
+                    task_dict = dict(task)
+                else:
+                    task_dict = dict(task)
+                if not task_dict.get("id"):
+                    task_dict["id"] = 90000 + i
+                normalised.append(task_dict)
+            schedule = normalised
         if not schedule:
             schedule = [
                 {
@@ -239,7 +246,7 @@ async def create_plan(
 
     # Carry-over fix: MOVE pending rows into the new plan (not copy).
     # Cap at MAX_CARRY_OVER=3 (priority order: High > Medium > Low).
-    # Tasks beyond the cap are dropped cleanly — student isn't doing them.
+    # Tasks beyond the cap are dropped cleanly â€” student isn't doing them.
     # Eliminates: dead 'Carried Over' rows, new_count hitting 0, frozen AI output.
     carry_over_count = 0
     if existing:
@@ -274,7 +281,7 @@ async def create_plan(
             pt.display_order  = i
 
         for pt in tasks_to_drop:
-            # Student isn't completing these — drop cleanly
+            # Student isn't completing these â€” drop cleanly
             existing.total_tasks = max(0, (existing.total_tasks or 0) - 1)
             db.delete(pt)
 
@@ -385,11 +392,11 @@ def update_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    was_completed = task.status == "Completed"
+    was_completed = task.status and task.status.lower() == "completed"
     for field, value in task_in.model_dump(exclude_unset=True).items():
         setattr(task, field, value)
 
-    now_completed = task.status == "Completed"
+    now_completed = task.status and task.status.lower() == "completed"
     plan = db.query(WeeklyPlan).get(task.weekly_plan_id)
     if plan:
         if not was_completed and now_completed:
@@ -402,14 +409,9 @@ def update_task(
             )
 
     if not was_completed and now_completed:
-        enqueue_outbox(
-            db,
-            ET.PLANNER_TASK_COMPLETED,
-            {"user_id": current_user.id, "task_id": task.id},
-            idempotency_key=f"planner-completed:{task.id}",
-        )
+        task.completed_at = datetime.now(timezone.utc)
 
-        # Passive confidence nudge — bump the matching skill by +2 (cap 95)
+        # Passive confidence nudge â€” bump the matching skill by +2 (cap 95)
         skill_key = PLANNER_CATEGORY_TO_SKILL_KEY.get(task.category)
         if skill_key:
             assessment = (
@@ -447,7 +449,7 @@ def delete_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    was_completed = task.status == "Completed"
+    was_completed = task.status and task.status.lower() == "completed"
     # Completed -> Archived (AI remembers it); Pending -> Deleted (forgotten).
     task.status = "Archived" if was_completed else "Deleted"
 
@@ -464,3 +466,4 @@ def delete_task(
     db.commit()
     _invalidate_planner_cache(current_user.id)
     return {"ok": True}
+

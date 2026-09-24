@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+﻿from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,7 @@ def create_notification(
     priority: str = "normal",
     action_url: str | None = None,
 ) -> Notification:
-    """App Flow §13.2 — unified notification write path."""
+    """App Flow Â§13.2 â€” unified notification write path."""
     notification = Notification(
         user_id=user_id,
         notification_type=notification_type,
@@ -106,3 +106,4 @@ def notify_resume_ready(db: Session, user: User) -> Notification:
         body="Your resume has been successfully analysed. View your ATS score and feedback now.",
         action_url="/vault",
     )
+

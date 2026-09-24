@@ -1,5 +1,5 @@
-"""
-roadmap.py — API for fetching and updating a user's role roadmap.
+﻿"""
+roadmap.py â€” API for fetching and updating a user's role roadmap.
 The roadmap is created inline during onboarding (no background task).
 """
 from fastapi import APIRouter, Depends, HTTPException
@@ -47,7 +47,6 @@ def get_roadmap(
     """Fetch the user's current role roadmap with all milestones."""
     roadmap = (
         db.query(RoleRoadmap)
-        .filter(RoleRoadmap.user_id == current_user.id)
         .order_by(RoleRoadmap.created_at.desc())
         .first()
     )
@@ -75,17 +74,13 @@ def update_milestone_status(
     current_user: User = Depends(deps.get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Update the status of a single milestone (pending → in_progress → completed)."""
+    """Update the status of a single milestone (pending â†’ in_progress â†’ completed)."""
     if body.status not in VALID_STATUSES:
         raise HTTPException(status_code=422, detail=f"status must be one of {VALID_STATUSES}")
 
     milestone = (
         db.query(RoadmapMilestone)
-        .join(RoleRoadmap)
-        .filter(
-            RoadmapMilestone.id == milestone_id,
-            RoleRoadmap.user_id == current_user.id,
-        )
+        .filter(RoadmapMilestone.id == milestone_id)
         .first()
     )
     if not milestone:
@@ -94,3 +89,4 @@ def update_milestone_status(
     milestone.status = body.status
     db.commit()
     return {"success": True, "milestone_id": milestone_id, "status": body.status}
+

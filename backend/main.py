@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api import auth, profile, planner, onboarding, mentor, notifications, hub, vault, assessments, roadmap, resume
+from app.api import auth, profile, planner, onboarding, mentor, notifications, hub, vault, assessments, roadmap, resume, internal
 from app.db.session import init_db
 from app.workers.outbox import outbox_stats
 
@@ -47,6 +47,7 @@ app.include_router(vault.router, prefix=f"{settings.API_V1_STR}/vault", tags=["v
 app.include_router(assessments.router, prefix=f"{settings.API_V1_STR}/assessments", tags=["assessments"])
 app.include_router(roadmap.router, prefix=f"{settings.API_V1_STR}/roadmap", tags=["roadmap"])
 app.include_router(resume.router, prefix=f"{settings.API_V1_STR}/resume", tags=["resume"])
+app.include_router(internal.router, prefix=f"{settings.API_V1_STR}/internal", tags=["internal"])
 
 init_db()
 

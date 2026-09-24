@@ -234,7 +234,7 @@ export default function VaultDashboard() {
       );
 
   return (
-    <div className="bg-background-deep text-on-surface font-body-base antialiased min-h-screen relative">
+    <div className="bg-background-deep text-on-surface font-body-base antialiased min-h-screen relative w-full max-w-[100vw] overflow-x-hidden">
       <div className="flex flex-col min-h-screen">
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
@@ -266,7 +266,7 @@ export default function VaultDashboard() {
           </div>
 
           {/* Filtering Tabs */}
-          <div className="flex bg-surface-container-low p-1 rounded-xl border border-border-subtle self-start inline-flex gap-1">
+          <div className="flex bg-surface-container-low p-1 rounded-xl border border-border-subtle self-start inline-flex gap-1 overflow-x-auto max-w-full no-scrollbar">
 
             {[
               'ALL',

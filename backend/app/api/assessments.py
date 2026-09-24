@@ -14,9 +14,7 @@ from app.models.assessment import UserSkillAssessment
 from app.core.role_skills import (
     ROLE_ASSESSMENT_SKILLS,
     get_valid_keys,
-    get_key_to_label,
     get_category_for_key,
-    get_common_keys,
 )
 
 router = APIRouter()

@@ -9,8 +9,7 @@ import {
   TrendingUp,
   XCircle,
   History,
-  Clock,
-  ChevronRight
+  Clock
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -25,6 +24,10 @@ export default function ResumeAnalyser() {
   const fileInputRef = useRef(null);
   const resultRef = useRef(null);
   const lastFileRef = useRef(null);
+  const activePollIdRef = useRef(null);
+
+  const POLL_INTERVAL_MS = 2500;
+  const MAX_POLL_ATTEMPTS = 40; // ~100s before giving up
 
   useEffect(() => {
     fetchHistory();
@@ -51,6 +54,51 @@ export default function ResumeAnalyser() {
     } finally {
       setLoadingHistory(false);
     }
+  };
+
+  // The backend processes resumes asynchronously (202 Accepted + Celery worker).
+  // Poll GET /resume/{id} until the job reaches a terminal status.
+  const pollForCompletion = (id, attempt = 0) => {
+    if (activePollIdRef.current !== id) return; // a newer upload superseded this poll
+
+    api.get(`/api/v1/resume/${id}`)
+      .then((res) => {
+        if (activePollIdRef.current !== id) return;
+        const data = res.data;
+        setAnalysis(data);
+
+        if (data.status === "COMPLETED") {
+          activePollIdRef.current = null;
+          setUploading(false);
+          fetchHistory();
+          setTimeout(() => {
+            resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 200);
+          return;
+        }
+
+        if (data.status === "FAILED") {
+          activePollIdRef.current = null;
+          setUploading(false);
+          fetchHistory();
+          return;
+        }
+
+        // Still PENDING / PROCESSING
+        if (attempt >= MAX_POLL_ATTEMPTS) {
+          activePollIdRef.current = null;
+          setUploading(false);
+          setError("Analysis is taking longer than expected. Check history in a moment.");
+          return;
+        }
+        setTimeout(() => pollForCompletion(id, attempt + 1), POLL_INTERVAL_MS);
+      })
+      .catch(() => {
+        if (activePollIdRef.current !== id) return;
+        activePollIdRef.current = null;
+        setUploading(false);
+        setError("Lost connection while checking analysis status. Please refresh.");
+      });
   };
 
   const handleFile = async (selectedFile) => {
@@ -80,15 +128,13 @@ export default function ResumeAnalyser() {
         timeout: 60000 // 60s timeout
       });
 
-      setAnalysis(res.data);
-      if (res.data.extraction_method === 'gemini_vision') {
-        setIsScanned(true);
-      }
-      fetchHistory(); // refresh history
-      
-      setTimeout(() => {
-        resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 200);
+      const { id, status } = res.data;
+      setAnalysis({ id, status: status || "PENDING" });
+      fetchHistory(); // refresh history so the pending row shows up
+
+      activePollIdRef.current = id;
+      pollForCompletion(id);
+      // uploading stays true until pollForCompletion reaches COMPLETED/FAILED/timeout
 
     } catch (err) {
       const status = err?.response?.status;
@@ -103,7 +149,6 @@ export default function ResumeAnalyser() {
       } else {
         setError(data?.detail?.message || data?.detail || "Upload failed. Please try again.");
       }
-    } finally {
       setUploading(false);
     }
   };
@@ -119,18 +164,28 @@ export default function ResumeAnalyser() {
     setUploading(true);
     setError(null);
     setAnalysis(null);
-    
+    activePollIdRef.current = null; // cancel any in-flight poll from a fresh upload
+
     api.get(`/api/v1/resume/${past.id}`)
       .then((res) => {
-        setAnalysis(res.data);
+        const data = res.data;
+        setAnalysis(data);
+
+        if (data.status === "PENDING" || data.status === "PROCESSING") {
+          activePollIdRef.current = past.id;
+          pollForCompletion(past.id);
+          return; // keep uploading=true until the poll resolves
+        }
+
+        setUploading(false);
         setTimeout(() => {
           resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 200);
       })
-      .catch((err) => {
+      .catch(() => {
         setError("Failed to load previous analysis.");
-      })
-      .finally(() => setUploading(false));
+        setUploading(false);
+      });
   };
 
   // Helper to render score ring
@@ -204,12 +259,12 @@ export default function ResumeAnalyser() {
                 </div>
                 <div className="text-center space-y-1">
                   <p className="text-sm font-semibold text-on-surface">
-                    Analysing your resume…
+                    {analysis?.status === "PROCESSING" ? "Analysing your resume…" : "Queued for analysis…"}
                   </p>
                   <p className="text-xs text-on-surface-variant">
                     {isScanned
                       ? "Scanned PDF detected — processing images (10–18 seconds)"
-                      : "Usually takes 3–6 seconds"}
+                      : "Usually takes a few seconds"}
                   </p>
                 </div>
               </div>
@@ -243,30 +298,30 @@ export default function ResumeAnalyser() {
             </div>
           )}
 
+          {/* Failed Analysis Banner (feedback is null when status is FAILED) */}
+          {analysis && analysis.status === "FAILED" && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-amber-300">
+                  Analysis failed
+                </p>
+                <p className="text-xs text-amber-300/80 mt-0.5">
+                  The AI service could not analyse this resume. Please retry in a moment.
+                </p>
+              </div>
+              <button
+                onClick={() => lastFileRef.current && handleFile(lastFileRef.current)}
+                className="px-4 py-2 text-xs font-bold text-amber-300 border border-amber-400/30 rounded-lg hover:bg-amber-400/10 transition-all"
+              >
+                Retry Analysis
+              </button>
+            </div>
+          )}
+
           {/* Results Area */}
           {analysis && analysis.feedback && (
             <div ref={resultRef} className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pt-4">
-              
-              {/* Fallback Banner */}
-              {analysis.feedback._analysis_failed && (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                  <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-amber-300">
-                      Analysis temporarily unavailable
-                    </p>
-                    <p className="text-xs text-amber-300/80 mt-0.5">
-                      Your resume was saved. The AI service is currently busy. Please retry in a moment.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => lastFileRef.current && handleFile(lastFileRef.current)}
-                    className="px-4 py-2 text-xs font-bold text-amber-300 border border-amber-400/30 rounded-lg hover:bg-amber-400/10 transition-all"
-                  >
-                    Retry Analysis
-                  </button>
-                </div>
-              )}
 
               {/* Main Score & Summary */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -360,6 +415,33 @@ export default function ResumeAnalyser() {
                 </div>
               )}
 
+              {/* ATS Factors Breakdown */}
+              {analysis.feedback.ats_factors && (
+                <div className="card p-6">
+                  <h3 className="text-lg font-bold mb-6">ATS Factor Breakdown</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {Object.entries(analysis.feedback.ats_factors).map(([key, val]) => (
+                      <div key={key} className="p-4 bg-surface rounded-xl border border-surface-variant hover:border-primary/30 transition-colors">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-semibold capitalize text-on-surface">{key.replace(/_/g, ' ')}</span>
+                          <span className={clsx(
+                            "text-xs font-bold px-2 py-1 rounded-full",
+                            val.score >= 80 ? "bg-green-500/10 text-green-400" :
+                            val.score >= 50 ? "bg-yellow-500/10 text-yellow-400" :
+                            "bg-red-500/10 text-red-400"
+                          )}>
+                            {val.score}/100
+                          </span>
+                        </div>
+                        <p className="text-xs text-on-surface-variant leading-relaxed">
+                          {val.notes}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Missing Keywords */}
               {analysis.feedback.keywords_missing && analysis.feedback.keywords_missing.length > 0 && (
                 <div className="card p-6">
@@ -410,7 +492,7 @@ export default function ResumeAnalyser() {
               >
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-xs font-semibold px-2 py-1 bg-surface-variant text-on-surface rounded-md">
-                    Score: {item.failed ? "N/A" : item.ats_score}
+                    {item.status === "COMPLETED" ? `Score: ${item.ats_score}` : item.status === "FAILED" ? "Failed" : "Processing…"}
                   </span>
                   <span className="text-[10px] text-on-surface-variant flex items-center gap-1">
                     <Clock className="w-3 h-3" />
@@ -420,9 +502,14 @@ export default function ResumeAnalyser() {
                 <p className="text-sm font-medium truncate" title={item.file_name}>
                   {item.file_name || "Resume.pdf"}
                 </p>
-                {item.failed && (
+                {item.status === "FAILED" && (
                   <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" /> Analysis Failed
+                  </p>
+                )}
+                {(item.status === "PENDING" || item.status === "PROCESSING") && (
+                  <p className="text-xs text-primary mt-2 flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> Still processing
                   </p>
                 )}
               </div>

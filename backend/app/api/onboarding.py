@@ -1,5 +1,5 @@
-"""
-onboarding.py — Four-step onboarding flow.
+﻿"""
+onboarding.py â€” Four-step onboarding flow.
 Step 4 now generates the role roadmap inline (synchronous AI call) instead
 of firing a background task. This eliminates the polling loop and the
 UI freeze bug caused by navigate() firing before the job completed.
@@ -7,7 +7,7 @@ UI freeze bug caused by navigate() firing before the job completed.
 from datetime import datetime, timezone
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
@@ -16,9 +16,8 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.assessment import UserSkillAssessment
 from app.models.roadmap import RoleRoadmap, RoadmapMilestone
-from app.workers.outbox import enqueue_outbox
-from app.workers import event_types as ET
-from app.services.ai_service import generate_role_roadmap_async
+from app.services.notification_service import notify_welcome
+from app.services.roadmap.service import generate_role_roadmap_async
 from app.core.role_skills import ROLE_ASSESSMENT_SKILLS, get_key_to_label, get_category_for_key, get_valid_keys
 
 router = APIRouter()
@@ -243,7 +242,7 @@ async def generate_roadmap(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     """
-    Inline roadmap generation — no background task, no polling.
+    Inline roadmap generation â€” no background task, no polling.
     Calls the AI synchronously, persists milestones, marks onboarding complete,
     and returns the result in a single HTTP response.
     """
@@ -255,7 +254,7 @@ async def generate_roadmap(
         except Exception:
             target_companies = []
 
-    # Collect weak areas (confidence < 50) — filter by role for accuracy
+    # Collect weak areas (confidence < 50) â€” filter by role for accuracy
     key_to_label = get_key_to_label(target_role)
     weak_rows = (
         db.query(UserSkillAssessment)
@@ -269,7 +268,7 @@ async def generate_roadmap(
 
     preparation_status = getattr(current_user, "preparation_status", "early") or "early"
 
-    # Call AI — falls back to hardcoded milestones on failure
+    # Call AI â€” falls back to hardcoded milestones on failure
     ai_milestones = await generate_role_roadmap_async(
         target_role=target_role,
         weak_areas=weak_areas,
@@ -326,12 +325,12 @@ async def generate_roadmap(
                 .first()
             )
             if existing:
-                # Already rated on the Subjects page — keep as-is
+                # Already rated on the Subjects page â€” keep as-is
                 # But if it's still at 25 (never touched) and onboarding has a higher value, carry it over
                 if existing.self_rated_confidence == 25 and s["key"] in universal_confidence:
                     existing.self_rated_confidence = universal_confidence[s["key"]]
             else:
-                # Not yet in DB — seed from onboarding row if available, else default 25
+                # Not yet in DB â€” seed from onboarding row if available, else default 25
                 seeded_confidence = universal_confidence.get(s["key"], 25)
                 db.add(UserSkillAssessment(
                     user_id=current_user.id,
@@ -342,15 +341,8 @@ async def generate_roadmap(
                     self_rated_confidence=seeded_confidence,
                 ))
 
-    # Welcome notifications (idempotent)
-    name = current_user.profile.full_name if current_user.profile else current_user.full_name
-    welcome_key = f"onboarding-welcome:{current_user.id}"
-    enqueue_outbox(
-        db,
-        ET.NOTIFICATION_WELCOME,
-        {"user_id": current_user.id},
-        idempotency_key=f"{welcome_key}:notification",
-    )
+    # Welcome notification
+    notify_welcome(db, current_user)
 
     db.commit()
     db.refresh(roadmap)
@@ -361,4 +353,5 @@ async def generate_roadmap(
         milestone_count=len(milestone_dicts),
         status="completed",
     )
+
 

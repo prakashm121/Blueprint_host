@@ -28,7 +28,6 @@ export default function DSAProblemDetail() {
   const [savedNotes, setSavedNotes] = useState([]);
   const [bookmarked, setBookmarked] = useState(false);
   const [solved, setSolved] = useState(false);
-  const [hintsOpen, setHintsOpen] = useState({});
 
   useEffect(() => {
     async function load() {

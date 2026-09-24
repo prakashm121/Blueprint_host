@@ -9,7 +9,6 @@ Used by:
   - app/api/assessments.py          -- validate/upsert skill confidence
   - app/api/onboarding.py           -- seed role-specific skills after roadmap generation
   - app/services/context_builder.py -- build weak/strong area lists for AI prompts
-  - app/services/ai_service.py      -- build role-aware prompt tables
 """
 
 from __future__ import annotations
@@ -452,4 +451,4 @@ def get_skills_in_category(role: str, category: str) -> list[dict[str, str]]:
 
 def get_common_keys(old_role: str, new_role: str) -> set[str]:
     """Return skill keys that exist in both old_role and new_role (for role-change logic)."""
-    return get_valid_keys(old_role) & get_valid_keys(new_role)
+    return get_valid_keys(old_role) & get_valid_keys(new_role)

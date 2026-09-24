@@ -1,37 +1,67 @@
 # Blueprint — Backend
 
-A FastAPI backend powering a full-stack placement preparation platform. Handles auth, onboarding, AI-generated weekly plans, an interview hub (DSA + Q&A + Quiz), AI mentor chat, a knowledge vault, and a notification/outbox system.
+FastAPI service powering the Blueprint placement-prep platform: Supabase-authenticated API, an AI Gateway wrapping Gemini for resume analysis / mentor chat / roadmap generation, a Postgres-backed Interview Hub (DSA + Q&A + quiz content), and a single-purpose Celery worker for the one job that's actually slow (resume analysis).
 
 ---
 
 ## Table of contents
 
 - [Tech stack](#tech-stack)
+- [Architecture](#architecture)
 - [Project structure](#project-structure)
 - [Quick start — local dev](#quick-start--local-dev)
-- [Running all three processes](#running-all-three-processes)
 - [Environment variables](#environment-variables)
-- [Database](#database)
-- [Data pipeline — Interview Hub](#data-pipeline--interview-hub)
-- [Background workers](#background-workers)
+- [Database & models](#database--models)
 - [API overview](#api-overview)
-- [Caching strategy](#caching-strategy)
+- [AI Gateway](#ai-gateway)
+- [Background jobs](#background-jobs)
+- [Caching](#caching)
+- [Interview Hub content bank](#interview-hub-content-bank)
+- [Deployment](#deployment)
+- [Known gaps / tech debt](#known-gaps--tech-debt)
 
 ---
 
 ## Tech stack
 
-| Layer | Technology |
-|---|---|
-| API framework | FastAPI + Uvicorn |
-| ORM | SQLAlchemy 2.x |
-| Database | PostgreSQL |
-| Migrations | Alembic |
-| Cache / broker | Redis (Upstash-compatible) |
-| Background tasks | Celery + Celery Beat |
-| AI Mentor | Google Gemini API |
-| Email | SMTP (configurable) with transactional outbox |
-| Auth | JWT (access + refresh tokens) |
+| Layer | Technology | Notes |
+|---|---|---|
+| API framework | FastAPI + Uvicorn | |
+| ORM | SQLAlchemy 2.x | |
+| Database | PostgreSQL (via Supabase) | |
+| Migrations | Alembic | 13 migrations in `alembic/versions/` |
+| Auth | Supabase (Google OAuth) | verified server-side by calling Supabase's own `/auth/v1/user` API — no local password/JWT-issuing flow |
+| Cache / Celery broker | Redis (Upstash-compatible) | dual-purpose: Celery broker **and** app-level response cache |
+| Background tasks | Celery (worker only — **no Beat**) | one task: resume analysis |
+| AI | Google Gemini, via `google-genai` SDK | wrapped by a single `AIGateway` (`app/ai/gateway.py`) used by resume/mentor/roadmap |
+| PDF parsing | `pdfminer.six` | resume text extraction |
+
+`passlib[argon2]` and `python-jose` are still in `requirements.txt` from an earlier local-JWT design — see [Known gaps](#known-gaps--tech-debt).
+
+---
+
+## Architecture
+
+```
+                    Supabase (Postgres + Auth)
+                    ▲                    ▲
+                    │ session verify     │ reads/writes
+                    │                    │
+  Vercel (React) ──▶│  FastAPI (main.py) │──▶ Gemini API (via app/ai/gateway.py)
+                    │  ┌──────────────┐  │
+                    │  │ Celery worker│  │──▶ Redis (Upstash) — broker + app cache
+                    │  │ (resume task │  │
+                    │  │  only)       │  │
+                    │  └──────────────┘  │
+                    └────────────────────┘
+                             ▲
+                             │ hourly HTTPS POST, shared-secret header
+                    GitHub Actions (.github/workflows/planner-reminders.yml)
+```
+
+- **Auth**: the frontend authenticates entirely through Supabase (Google OAuth). The backend never issues its own tokens — `app/api/deps.py` takes the Supabase access token (cookie or `Authorization` header), verifies it by calling Supabase's own API, and JIT-provisions a local `User`/`Profile` row on first sight. `app/api/auth.py` only exposes `GET /me`.
+- **No Celery Beat.** There used to be one; it was removed. The only Celery task left is resume analysis (`process_resume_task`, dispatched via `.delay()` from `POST /resume/upload`) because it's the one job that's genuinely slow (a Gemini call that can take up to 120s) and shouldn't block an HTTP request. The one genuine periodic job — hourly planner-reminder scanning — is triggered by a GitHub Actions scheduled workflow hitting `POST /api/v1/internal/scan-planner-reminders` (guarded by a shared-secret header), which runs synchronously and writes notifications directly — no queue involved.
+- **AI Gateway** (`app/ai/gateway.py`) is the single point every Gemini call goes through — model-fallback chains per task type, structured-output schema enforcement via Pydantic, retry/failover on 404/429/503.
 
 ---
 
@@ -39,97 +69,82 @@ A FastAPI backend powering a full-stack placement preparation platform. Handles 
 
 ```
 backend/
-├── main.py                         # FastAPI app entry point
-├── seed_hub.py                     # Seeds DSA + Interview + Quiz tables
+├── main.py                         # FastAPI app entry point, router registration
+├── start.sh                        # uvicorn + celery worker (no beat)
 ├── requirements.txt
-├── .env.example
+├── .env.example                    # currently stale — see Known gaps
+├── scratch_seed_data.py            # one-off seed script for the Interview Hub tables
 │
-├── alembic/
-│   ├── env.py
-│   ├── script.py.mako
-│   └── versions/
-│       ├── 16a3e612d75c_create_users_table.py
-│       ├── efae8c76bf9c_create_profiles_table.py
-│       ├── d092f448052f_add_stateful_conversation_fields.py
-│       └── ... (10 migrations total)
+├── alembic/versions/                # 13 migrations
 │
 ├── app/
 │   ├── api/
-│   │   ├── deps.py                 # get_current_user, get_db
-│   │   ├── auth.py                 # register, login, verify-email, refresh
-│   │   ├── onboarding.py           # target role, companies, skill assessment
-│   │   ├── profile.py              # GET + PATCH /profile
-│   │   ├── dashboard.py            # GET /dashboard/summary
+│   │   ├── deps.py                 # get_current_user() — Supabase token verification + JIT provisioning
+│   │   ├── auth.py                 # GET /me only
+│   │   ├── profile.py              # GET/PATCH profile
+│   │   ├── onboarding.py           # role/skills/goals wizard, triggers roadmap generation
 │   │   ├── planner.py              # weekly plans + tasks
-│   │   ├── hub.py                  # DSA problems, Interview Q&A, Quiz MCQ
-│   │   ├── mentor.py               # AI mentor/teacher stateful router
-│   │   ├── notifications.py        # in-app notification feed
+│   │   ├── roadmap.py              # role roadmap + milestones
+│   │   ├── mentor.py               # AI mentor conversations (SSE streaming)
+│   │   ├── hub.py                  # DSA problems, interview Q&A, quiz — content + progress
 │   │   ├── vault.py                # knowledge vault items
-│   │   └── resume.py               # resume ATS scoring and feedback
-│   ├── models/
-│   │   ├── user.py                 # User
-│   │   ├── profile.py              # Profile (1-to-1 with User)
-│   │   ├── email_verification.py   # EmailVerification tokens
-│   │   ├── outbox_event.py         # TransactionalOutbox
-│   │   ├── notification.py         # Notification
-│   │   ├── planner.py              # WeeklyPlan + PlannerTask
-│   │   ├── roadmap.py              # RoleRoadmap + RoadmapMilestone
-│   │   ├── assessment.py           # UserSkillAssessment
-│   │   ├── dashboard_stats.py      # DashboardStatistics (denormalised cache row)
-│   │   ├── mentor.py               # MentorConversation (agent_mode, topic) + MentorMessage
-│   │   ├── hub.py                  # DSAProblem · InterviewQuestion · QuizQuestion
-│   │   ├── hub_progress.py         # UserCodingProgress · UserQuizAttempt · UserQuestionProgress
-│   │   ├── vault.py                # VaultItem
-│   │   └── resume.py               # ResumeAnalysis
-│   ├── prompts/                    # LLM Prompts
-│   │   ├── mentor.py               # System prompt for Career Mentor
-│   │   └── teacher.py              # System prompt for Technical Teacher
+│   │   ├── assessments.py          # self-rated subject confidence
+│   │   ├── notifications.py        # in-app notification feed
+│   │   ├── resume.py               # resume upload (async) + history
+│   │   └── internal.py             # shared-secret-protected cron-trigger endpoint
+│   │
+│   ├── models/                     # one SQLAlchemy model file per domain — see Database & models
+│   │
+│   ├── ai/
+│   │   └── gateway.py              # AIGateway — the only place that calls Gemini
+│   │
+│   ├── prompts/                    # LLM prompt builders, one package per feature
+│   │   ├── mentor/                 # mentor.py, teacher.py
+│   │   ├── resume/                 # analyzer.py
+│   │   └── roadmap/                # roadmap_prompts.py
 │   │
 │   ├── services/
-│   │   ├── ai_service.py           # Gemini API wrappers & Stateful Router
-│   │   ├── context_builder.py      # builds user context payload for AI calls
-│   │   ├── email_service.py        # SMTP send helpers (verify, welcome, reminders)
-│   │   ├── notification_service.py # create + dispatch in-app notifications
-│   │   ├── roadmap_service.py      # AI weekly plan generation logic
-│   │   ├── verification_service.py # email token generation + validation
-│   │   └── resume_service.py       # pdfminer text extraction and Gemini integration
+│   │   ├── context_builder.py      # builds AI prompt context from user data
+│   │   ├── notification_service.py # creates in-app Notification rows
+│   │   ├── mentor/                 # service.py, classifier.py
+│   │   ├── resume/                 # service.py, analyzer.py, extractor.py, schemas.py
+│   │   └── roadmap/                # service.py, schemas.py
+│   │
 │   ├── workers/
-│   │   ├── celery_app.py           # Celery app instance + Beat schedule
-│   │   ├── celery_tasks.py         # Task definitions (thin wrappers)
-│   │   ├── outbox.py               # Outbox event processor
-│   │   ├── scheduler_jobs.py       # scan_due_planner_tasks, reconcile_stuck_generations
-│   │   ├── deferred.py             # deferred task helpers
-│   │   ├── dispatch.py             # event → handler routing
-│   │   ├── event_types.py          # ET.* event type constants
-│   │   └── handlers.py             # per-event-type handler functions
+│   │   ├── celery_app.py           # Celery app — broker/backend config only, no Beat
+│   │   ├── tasks/ai_tasks.py       # process_resume_task (the only registered task)
+│   │   ├── scheduler_jobs.py       # scan_due_planner_tasks() — now HTTP-triggered, not Celery-scheduled
+│   │   ├── outbox.py               # transactional outbox — kept but currently unused (0 callers)
+│   │   ├── handlers.py             # outbox event handlers — dormant, same reason
+│   │   └── event_types.py          # outbox event type constants — dormant, same reason
 │   │
 │   ├── core/
-│   │   ├── config.py               # Settings (pydantic-settings, reads .env)
-│   │   ├── security.py             # JWT helpers
-│   │   └── cache.py                # get_cache / set_cache / delete_cache (Redis)
+│   │   ├── config.py               # Settings (env vars)
+│   │   ├── cache.py                # get_cache/set_cache/delete_cache (Redis)
+│   │   └── role_skills.py          # static role → skill taxonomy
 │   │
-│   └── db/
-│       └── session.py              # SessionLocal, Base, get_db
+│   └── db/session.py                # SessionLocal, Base, get_db, init_db
 │
-└── csv/                            # Processed seed data (git-ignored)
-    ├── seed_interview_questions_clean.csv   # 33,807 rows
-    ├── seed_quiz_questions.csv              # 5,816 rows
-    └── ultimate_master_coding_questions.csv # 3,632 unique problems
+└── csv/                             # seed data for the Interview Hub (git-ignored in spirit, present here)
+    ├── seed_interview_questions_clean.csv
+    ├── seed_quiz_questions.csv
+    └── ultimate_master_coding_questions.csv
 ```
 
 ---
 
 ## Quick start — local dev
 
-Requires PostgreSQL and Redis running locally (or via Docker).
+Requires PostgreSQL (or a Supabase project) and Redis.
 
 ```powershell
-cd Workspace\backend
+cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 copy .env.example .env
-# fill in DATABASE_URL, REDIS_URL, and GEMINI_API_KEY in .env
+# fill in DATABASE_URL, REDIS_URL, GEMINI_API_KEY, SUPABASE_URL, SUPABASE_JWT_SECRET
+# (.env.example itself is stale — see Environment variables below for the real list)
 alembic upgrade head
 uvicorn main:app --reload
 ```
@@ -137,195 +152,82 @@ uvicorn main:app --reload
 - API: http://localhost:8000
 - Swagger docs: http://localhost:8000/docs
 
-Then in two separate terminals:
+The Celery worker is **only** needed if you're testing resume upload locally:
 
 ```powershell
-# Terminal 2 — Celery worker
-celery -A app.workers.celery_app worker --loglevel=info --concurrency=4 --without-gossip --without-mingle --without-heartbeat
-
-# Terminal 3 — Celery Beat (cron scheduler)
-celery -A app.workers.celery_app beat --loglevel=info
+celery -A app.workers.celery_app worker --loglevel=info --pool=solo --without-gossip --without-mingle --without-heartbeat
 ```
 
----
-
-## Running all three processes
-
-The backend runs as **three separate processes**. All three must be running for full functionality — there is no embedded/single-process mode.
+There is no Celery Beat process to run anymore. To test the planner-reminder scan locally, call the internal endpoint directly:
 
 ```powershell
-# 1. API server
-uvicorn main:app --host 0.0.0.0 --port 8000
-
-# 2. Celery worker — handles roadmap generation, outbox dispatch, planner reminders
-celery -A app.workers.celery_app worker --loglevel=info --concurrency=4 --without-gossip --without-mingle --without-heartbeat
-
-# 3. Celery Beat — triggers scheduled jobs (outbox scan, planner reminders, reconcile)
-celery -A app.workers.celery_app beat --loglevel=info
+curl -X POST http://localhost:8000/api/v1/internal/scan-planner-reminders -H "X-Internal-Secret: <your INTERNAL_TRIGGER_SECRET>"
 ```
 
-> **Note:** Never combine Beat and worker into one process (`celery worker -B`) when running multiple worker instances — Beat will fire duplicate schedules.
-
-Or with Docker Compose:
-
-```powershell
-cd Workspace
-docker compose up --build
-```
-
-| Service | URL / Port |
-|---|---|
-| API | http://localhost:8000 |
-| Postgres | localhost:5432 |
-| Redis | localhost:6379 |
-| Celery worker | — |
-| Celery Beat | — |
+No Dockerfile or `docker-compose.yml` exists in this repo — local dev is native (venv + your own Postgres/Redis), and deployment is a single Render Web Service via `start.sh`. See [Deployment](#deployment).
 
 ---
 
 ## Environment variables
 
-Copy `.env.example` to `.env` and fill in values.
+The real list, read from `app/core/config.py` (`.env.example` in the repo is out of date — see [Known gaps](#known-gaps--tech-debt)):
 
 ```env
-# App
-SECRET_KEY=change-me
-FRONTEND_URL=http://localhost:3000
+SECRET_KEY=                      # not used for auth anymore (Supabase handles that); still read on startup
+DATABASE_URL=postgresql+psycopg://user:pass@host:5432/db
+FRONTEND_URL=http://localhost:5173   # CORS allow-origin
 
-# Database
-DATABASE_URL=postgresql+psycopg2://user:pass@localhost:5432/blueprint
+# Supabase (auth)
+SUPABASE_URL=
+SUPABASE_JWT_SECRET=
 
-# Redis
+# Gemini
+GEMINI_API_KEY=
+GEMINI_TEMPERATURE=0.7
+GEMINI_MAX_TOKENS=8192
+GEMINI_TOP_P=0.95
+GEMINI_TOP_K=40
+GEMINI_CONCURRENCY=10
+GEMINI_REQUEST_TIMEOUT=120.0
+
+# Redis / Celery
 REDIS_URL=redis://localhost:6379/0
-# For Upstash: rediss://:<token>@<host>:6380
+CELERY_BROKER_URL=               # optional — falls back to REDIS_URL if unset
+WORKER_MODE=celery
 
-# Email (leave blank to log emails to console instead of sending)
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_USE_TLS=true
-SMTP_USER=
-SMTP_PASSWORD=
-SMTP_FROM=noreply@blueprint.com
-EMAIL_VERIFICATION_EXPIRE_HOURS=24
+# Internal cron trigger (GitHub Actions → /internal/scan-planner-reminders)
+INTERNAL_TRIGGER_SECRET=
 
-# Google Gemini (AI Mentor + roadmap generation)
-GEMINI_API_KEY=AIza...
+# Outbox tuning (currently unused — outbox pattern is dormant, see Known gaps)
+OUTBOX_BATCH_SIZE=50
+OUTBOX_MAX_ATTEMPTS=5
 ```
 
 ---
 
-## Database
+## Database & models
 
 ```bash
 alembic upgrade head
 ```
 
-### Models and what they store
-
 | Model | Table | Purpose |
 |---|---|---|
-| `User` | `users` | Auth credentials, onboarding state, target role/companies |
-| `Profile` | `profiles` | Full name, college, CGPA, GitHub, LinkedIn, avatar |
-| `EmailVerification` | `email_verifications` | Token hash + expiry for email verify flow |
-| `OutboxEvent` | `outbox_events` | Transactional outbox — events queued for async dispatch |
-| `Notification` | `notifications` | In-app notification feed per user |
-| `WeeklyPlan` | `weekly_plans` | AI or manual weekly prep plan |
-| `PlannerTask` | `planner_tasks` | Individual tasks inside a weekly plan |
-| `RoleRoadmap` | `role_roadmaps` | Custom role-specific roadmap for a user |
-| `RoadmapMilestone` | `roadmap_milestones` | Ordered tasks inside a role roadmap |
-| `UserSkillAssessment` | `user_skill_assessments` | Self-rated confidence per skill (onboarding) |
-| `DashboardStatistics` | `dashboard_statistics` | Denormalised readiness score row per user |
-| `MentorConversation` | `mentor_conversations` | AI chat session header |
-| `MentorMessage` | `mentor_messages` | Individual messages within a conversation |
-| `DSAProblem` | `dsa_problems` | 3,632 LeetCode-style problems with HTML content + code snippets |
-| `InterviewQuestion` | `interview_questions` | 33,807 open-ended Q&A rows with category, skill, roles |
-| `QuizQuestion` | `quiz_questions` | 5,816 MCQ rows with 4 options + correct answer |
-| `UserCodingProgress` | `user_coding_progress` | Per-user DSA solve status, bookmarks, notes, streak data |
-| `UserQuizAttempt` | `user_quiz_attempts` | Per-user quiz answer history and accuracy tracking |
-| `UserQuestionProgress` | `user_question_progress` | Per-user interview Q&A bookmark and revision state |
-| `VaultItem` | `vault_items` | Polymorphic knowledge vault — bookmarks, AI insights, personal notes |
-
----
-
-## Data pipeline — Interview Hub
-
-The hub tables are populated from processed CSV files. The processing scripts live in the separate **`blueprint-data-processing`** repository — run them once offline before seeding.
-
-### Step 1 — Refine + clean (blueprint-data-processing repo)
-
-```bash
-python refine_quiz_and_interview_questions.py   # merges raw sources → seed_interview_questions.csv
-python clean_seed_interview_questions.py        # normalises categories, roles, skills → seed_interview_questions_clean.csv
-```
-
-Copy the three output CSVs into this repo's `csv/` folder:
-- `seed_interview_questions_clean.csv`
-- `seed_quiz_questions.csv`
-- `ultimate_master_coding_questions.csv`
-
-### Step 2 — Seed the database
-
-```bash
-python seeds/seed_hub.py
-```
-
-Seeds all three hub tables in batches of 500 with `ON CONFLICT DO NOTHING` — safe to re-run.
-
-Also populates permanent Redis metadata keys used by filter dropdowns:
-
-```
-meta:interview:categories          → {category: count}
-meta:interview:skills              → {skill: count}
-meta:interview:skills:<category>   → {skill: count, …}   (per category)
-meta:coding:topics                 → [topic list]
-meta:coding:companies              → [company list]
-meta:coding:counts                 → {Easy: N, Medium: N, Hard: N}
-```
-
-### Category → skill breakdown (Interview Q&A)
-
-| Category | Skills (sub-filter) | Rows |
-|---|---|---|
-| Programming Languages | Python, Java, C, C++, Rust, Go, TypeScript, Swift, Kotlin, … (41 languages) | ~6,150 |
-| AI & ML | Data Science Concepts, Machine Learning, Deep Learning, NLP, … | ~7,800 |
-| Backend | Django, FastAPI, Spring Boot, Node.js, ASP.NET Core, … | ~3,500 |
-| Frontend | React.js, Next.js, Angular, Vue.js, Svelte, … | ~2,800 |
-| Database | PostgreSQL, MySQL, MongoDB, Redis, Cassandra, … | ~2,100 |
-| DSA | Arrays, Trees, Graphs, Dynamic Programming, … | ~1,900 |
-| Core Subjects | OOP, Operating Systems, DSA | ~450 |
-| DevOps | Docker, Kubernetes, CI/CD, Terraform, … | ~1,200 |
-| Security & Networking | — | ~900 |
-| Behavioral | — | ~800 |
-| … | … | … |
-
----
-
-## Background workers
-
-### Celery tasks
-
-| Task name | Trigger | What it does |
-|---|---|---|
-| `process_outbox_task` | Every 30 s (Beat) | Picks up pending `OutboxEvent` rows and dispatches (email, notifications) |
-| `scan_planner_reminders_task` | Every 5 min (Beat) | Finds `PlannerTask` rows with `reminder_enabled=True` due soon, creates notifications |
-| `reconcile_generations_task` | Every 10 min (Beat) | Requeues stuck `PlannerGeneration` jobs (status=processing, stale) |
-| `generate_roadmap_task` | On demand (API trigger) | Runs AI roadmap generation for a given `generation_id` |
-
-### Outbox event types
-
-| `event_type` | Dispatched when | Effect |
-|---|---|---|
-| `ET.EMAIL_VERIFICATION` | User registers | Sends verification email via SMTP |
-| `ET.WELCOME_EMAIL` | Onboarding completes | Sends welcome email |
-| `ET.RESUME_ANALYSIS` | Resume uploaded | Triggers async ATS scoring |
-| `ET.PLANNER_REMINDER` | Task due soon | Sends reminder email + in-app notification |
-| `ET.ROADMAP_READY` | Plan generation finishes | Sends "your plan is ready" email |
-
-### Worker health check
-
-```bash
-curl http://localhost:8000/api/v1/status/workers
-```
+| `User` | `users` | Supabase-linked account row (JIT-provisioned on first login) |
+| `Profile` | `profiles` | Name, college, target role, socials |
+| `UserSkillAssessment` | `user_skill_assessments` | Self-rated confidence per skill |
+| `DashboardStatistics` | `dashboard_statistics` | Denormalised readiness snapshot |
+| `WeeklyPlan` / `PlannerTask` | `weekly_plans` / `planner_tasks` | Weekly prep plan and its tasks |
+| `RoleRoadmap` / `RoadmapMilestone` | `role_roadmaps` / `roadmap_milestones` | AI-generated role-specific roadmap |
+| `MentorConversation` / `MentorMessage` | `mentor_conversations` / `mentor_messages` | AI mentor chat history |
+| `DSAProblem` | `dsa_problems` | Coding problems (Interview Hub) |
+| `InterviewQuestion` | `interview_questions` | Open-ended interview Q&A |
+| `QuizQuestion` | `quiz_questions` | MCQ bank |
+| `UserCodingProgress` / `UserQuizSession` | `user_coding_progress` / `user_quiz_sessions` | Per-user solve/attempt tracking |
+| `VaultItem` | `vault_items` | Bookmarks, AI insights, personal notes |
+| `Notification` | `notifications` | In-app notification feed |
+| `ResumeAnalysis` | `resume_analyses` | Resume upload + AI feedback + audit trail (`model`, `prompt_version`, `scoring_version`) |
+| `OutboxEvent` | `outbox_events` | Transactional outbox — table exists, currently has zero writers (see Known gaps) |
 
 ---
 
@@ -333,98 +235,137 @@ curl http://localhost:8000/api/v1/status/workers
 
 All routes are prefixed `/api/v1/`.
 
-### Auth & onboarding
-
+**Auth & profile**
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/auth/register` | Create account, queue verification email |
-| `POST` | `/auth/login` | Returns access + refresh JWT |
-| `GET` | `/auth/verify` | Consume email verification token |
-| `POST` | `/auth/refresh` | Rotate access token using refresh token |
-| `GET` | `/profile` | Get current user profile |
-| `PATCH` | `/profile` | Update profile (invalidates `dashboard:{user_id}` cache) |
-| `POST` | `/onboarding/target` | Set target role + companies |
-| `POST` | `/onboarding/assessment` | Submit skill confidence ratings |
+| `GET` | `/auth/me` | Current user info (JIT-provisioned from the verified Supabase session) |
+| `GET` / `PATCH` | `/profile` | Get / update profile |
 
-### Dashboard
-
+**Onboarding & assessments**
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/dashboard/summary` | Readiness score, weekly tasks, profile strength, quiz accuracy — Redis `dashboard:{user_id}` TTL 5 min |
+| `GET` | `/onboarding/catalog` | Assessment catalog |
+| `GET` | `/onboarding/role-skills-catalog` | Skills list per target role |
+| `GET` | `/onboarding/status` | Onboarding progress |
+| `POST` | `/onboarding/role-skills` | Submit role + skills step |
+| `POST` | `/onboarding/goals` | Submit goals step |
+| `POST` | `/onboarding/generate-roadmap` | AI roadmap generation (synchronous), finalizes onboarding |
+| `GET` / `PATCH` | `/assessments/subjects` | Self-rated subject confidence |
 
-### Planner
-
+**Planner & roadmap**
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/planner/plans` | List weekly plans (paginated) |
-| `POST` | `/planner/plans` | Create manual plan |
-| `POST` | `/planner/generate` | Trigger AI plan generation (async) |
-| `GET` | `/planner/plans/{id}` | Get plan with tasks |
-| `PATCH` | `/planner/tasks/{id}` | Update task (status change invalidates dashboard cache) |
+| `POST` | `/planner/daily` | Generate/fetch daily breakdown |
+| `GET` | `/planner/plans` | Active weekly plan |
+| `POST` | `/planner/plans` | Create weekly plan (AI-generated) |
+| `POST` | `/planner/plans/{plan_id}/tasks` | Add task |
+| `PATCH` | `/planner/tasks/{task_id}` | Update task (completing one sets `completed_at` directly) |
+| `DELETE` | `/planner/tasks/{task_id}` | Delete task |
+| `GET` | `/roadmap` | Get role roadmap |
+| `PATCH` | `/roadmap/milestones/{id}` | Update milestone status |
 
-### Interview Hub
-
+**Interview Hub**
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/hub/coding` | List DSA problems — keyset pagination, filters: `difficulty`, `topic`, `company` |
-| `GET` | `/hub/coding/{id}` | Problem detail — includes full HTML content + code snippets |
-| `GET` | `/hub/coding/{id}/progress` | Get user's solve status for a problem |
-| `POST` | `/hub/coding/{id}/progress` | Mark problem solved / attempted |
-| `GET` | `/hub/stats/dsa` | Per-user stats: solved count, difficulty breakdown, streak |
-| `GET` | `/hub/interview` | List Q&A — filters: `category`, `skill`, `difficulty`, `role` |
-| `GET` | `/hub/interview/{id}` | Question detail with full answer body |
-| `GET` | `/hub/quiz` | List MCQ — filters: `section`, `topic`, `difficulty` (correct answer omitted) |
+| `GET` | `/hub/coding`, `/hub/coding/{id}` | DSA problem list / detail |
+| `GET` | `/hub/interview`, `/hub/interview/{id}` | Q&A list / detail |
+| `GET` | `/hub/quiz` | MCQ list |
+| `POST` | `/hub/quiz/attempt` | Submit quiz attempt |
+| `GET` | `/hub/stats/quiz`, `/hub/stats/dsa` | Per-user stats |
+| `GET` / `POST` | `/hub/coding/{id}/progress` | Get / mark solve progress |
 
-### AI Mentor (Gemini)
-
-The AI Mentor uses a **Stateful Routing Architecture** (`app/services/ai_service.py`):
-- Conversations maintain a persistent `agent_mode` (Teacher or Mentor), `active_topic`, and `current_task`.
-- A deterministic router fast-paths follow-up messages (0 LLM calls for routing) using fast heuristic scoring to reduce latency.
-- Ambiguous initial messages fall back to an LLM router to classify the intent.
-
+**AI Mentor**
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/mentor/conversations` | List user's conversations |
-| `POST` | `/mentor/conversations` | Start new conversation |
-| `GET` | `/mentor/conversations/{id}` | Get conversation with all messages |
-| `POST` | `/mentor/conversations/{id}/message` | Send message, resolve state, get Gemini response |
+| `GET` / `POST` | `/mentor/conversations` | List / create conversations |
+| `GET` | `/mentor/conversations/{id}` | Conversation detail |
+| `POST` | `/mentor/conversations/{id}/stream` | SSE-streamed AI reply |
+| `POST` | `/mentor/message` | Legacy non-streaming send |
 
-### Knowledge Vault
-
+**Vault, notifications, resume**
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/vault` | List all vault items for current user (bookmarks, AI insights, notes) |
-| `POST` | `/vault` | Create a new vault item |
-| `PATCH` | `/vault/{id}` | Update a vault item (e.g. edit note content) |
-| `DELETE` | `/vault/{id}` | Delete a vault item |
+| `GET` / `POST` / `DELETE` | `/vault`, `/vault/{id}` | Knowledge vault CRUD |
+| `GET` | `/notifications/unread-count`, `/notifications` | Notification feed |
+| `PATCH` / `POST` | `/notifications/{id}/read`, `/notifications/read-all` | Mark read |
+| `POST` | `/resume/upload` | 202 Accepted — enqueues `process_resume_task`, poll for status |
+| `GET` | `/resume/history`, `/resume/{analysis_id}` | Resume analysis history / detail |
 
-### Search
-
+**Internal / ops**
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/search?q=...&type=coding,interview,quiz` | Unified full-text search across all three hub tables — PostgreSQL `tsvector` GIN index |
-
-### Notifications
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/notifications` | List unread notifications for current user |
-| `PATCH` | `/notifications/{id}/read` | Mark notification as read |
+| `POST` | `/internal/scan-planner-reminders` | Shared-secret-protected; runs the planner-reminder scan on demand (GitHub Actions calls this hourly) |
+| `GET` | `/status/workers` | Outbox backlog stats (will always show 0 — see Known gaps) |
+| `GET` | `/health` | Liveness check |
 
 ---
 
-## Caching strategy
+## AI Gateway
 
-All cache operations go through `app/core/cache.py` (`get_cache` / `set_cache` / `delete_cache`).
+Every Gemini call in the backend goes through `app.ai.gateway.ai_gateway` (`AIGateway.generate()` / `.generate_stream()`), used by the resume, mentor, and roadmap services. Per task type (`resume_analysis`, `mentor_response`/`teacher_response`, `roadmap_generation`, etc.) it:
 
-| Redis key | TTL | Invalidated by |
+1. Picks a model-fallback chain from `Settings` (e.g. `GEMINI_RESUME_MODELS`) and tries each in order, skipping 404s outright and failing over immediately on 429/503.
+2. When called with a Pydantic `schema`, passes it as `response_schema` so Gemini's structured-output mode actually constrains the JSON shape (not just a prompt instruction) — validates the response against the schema and raises `AIValidationError` on mismatch, with the real error surfaced rather than swallowed.
+3. Caps concurrency via `asyncio.Semaphore(GEMINI_CONCURRENCY)`.
+
+For resume analysis specifically: the AI returns per-section and per-ATS-factor scores only — the final `ats_score` is computed deterministically in Python (`ResumeFeedback.compute_score()` in `app/services/resume/schemas.py`), a fixed weighted sum, never trusted from the model directly.
+
+---
+
+## Background jobs
+
+**Celery worker** (no Beat) runs exactly one task: `process_resume_task` — extracts PDF text, calls the AI Gateway, writes the result, with dedup-by-file-hash. Dispatched via `.delay()` from `POST /resume/upload`.
+
+**Planner reminders** (the one genuinely time-based job) run via an external trigger instead of Celery Beat: a GitHub Actions scheduled workflow (`.github/workflows/planner-reminders.yml`, hourly) calls `POST /api/v1/internal/scan-planner-reminders`, which runs `scan_due_planner_tasks()` synchronously — no queue, no async indirection, since it's just a DB scan + a handful of `Notification` inserts.
+
+**The transactional outbox** (`app/workers/outbox.py`, `OutboxEvent` model, `handlers.py`, `event_types.py`) still exists but has **zero callers** — it was bypassed in favor of writing notifications directly, since the side effect was always a same-DB insert with no external dependency (no email is actually sent — see Known gaps). Left in place deliberately in case a future feature needs genuine at-least-once delivery around an external call (e.g. real email).
+
+---
+
+## Caching
+
+Redis serves two roles simultaneously — it's not just the Celery broker:
+
+| Redis key | TTL | Used by |
 |---|---|---|
-| `dashboard:{user_id}` | 5 min | `PATCH /profile`, task status → Completed, quiz attempt |
-| `iq:list:{md5(filters)}` | 1 hr | Re-seed only |
-| `iq:q:{id}` | 12 hr | Re-seed only |
-| `coding:list:{md5(filters)}` | 2 hr | Re-seed only |
-| `coding:q:{id}` | 12 hr | Re-seed only |
-| `quiz:list:{md5(filters)}` | 1 hr | Re-seed only |
-| `dsa:stats:{user_id}` | 5 min | `POST /hub/coding/{id}/progress` |
-| `meta:interview:*` | permanent | Re-seed |
-| `meta:coding:*` | permanent | Re-seed |
+| Hub content lists/detail | minutes–hours | `app/api/hub.py` |
+| Vault responses | 300s | `app/api/vault.py` |
+| Planner daily-regeneration rate limit | — | `app/api/planner.py` (`redis_client.incr`/`.expire`) |
+| AI context / interview-question cache | 300s–43200s | `app/services/context_builder.py` |
+
+All cache access goes through `app/core/cache.py`.
+
+---
+
+## Interview Hub content bank
+
+~43,000 rows across three tables, seeded from CSVs in `backend/csv/` by `backend/scratch_seed_data.py`:
+
+| Table | Rows | Contents |
+|---|---|---|
+| `dsa_problems` | 3,632 | Coding problems, full content + code snippets |
+| `interview_questions` | 33,807 | Open-ended Q&A across category/skill/role |
+| `quiz_questions` | 5,816 | MCQs, 4 options + correct answer |
+
+The seed script checks `count() == 0` before writing, so it's safe to re-run, but **it currently hardcodes an old repo path** (`E:\WebSite\Blueprint\backend\...`, missing the `_host` suffix this repo actually has) — it needs a path fix before it'll run here. See [Known gaps](#known-gaps--tech-debt).
+
+---
+
+## Deployment
+
+One Render free Web Service running `start.sh` (`uvicorn` + Celery worker, no Beat). No Dockerfile, `docker-compose.yml`, or `render.yaml` exist in this repo — the service is configured directly in the Render dashboard (root directory `backend`, build `pip install -r requirements.txt`, start `bash start.sh`).
+
+Redis is Upstash (free tier). The hourly planner-reminder scan is triggered by GitHub Actions, not a second always-on service — see `.github/workflows/planner-reminders.yml` at the repo root.
+
+---
+
+## Known gaps / tech debt
+
+Documented honestly rather than silently glossed over:
+
+- **`.env.example` is stale.** It still lists `SMTP_*`, `APP_ROLE`, `WORKER_MODE=embedded/arq`, and `SCHEDULER_ENABLED` from an earlier design, and is missing `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, and `INTERNAL_TRIGGER_SECRET`, which the app actually reads. Use the [Environment variables](#environment-variables) section above, not this file, until it's synced.
+- **`passlib[argon2]` and `python-jose`** are still dependencies from a prior local-JWT auth design. `jose` is used only for *unverified* claim decoding (metadata extraction), not token verification — Supabase's own API is the trust anchor. `passlib` appears to have no live caller at all. Neither should be removed without double-checking, but both are candidates for cleanup.
+- **The outbox pattern is dead code by design** (see [Background jobs](#background-jobs)) — the table, handlers, and event types are kept for a future real external-delivery use case, but nothing writes to `OutboxEvent` today. `GET /status/workers` will report an empty backlog forever until that changes.
+- **No email is actually sent anywhere.** Despite `SMTP_*` vars existing in `.env.example`, there is no email-sending code in the codebase. All "notifications" are in-app only (`Notification` rows).
+- **`scratch_seed_data.py` hardcodes a stale absolute path** to a differently-named clone of this repo — fix the path before relying on it to seed a fresh environment.
+- **`deps.py` hardcodes a Supabase publishable/anon key** inline for the server-to-Supabase verification call, rather than reading it from an env var. It's the anon key (not a secret), but it should still come from config for the sake of environment portability (e.g. staging vs prod Supabase projects).

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+﻿from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -84,3 +84,4 @@ def read_all(
 ):
     count = mark_all_read(db, current_user.id)
     return {"success": True, "marked_read": count}
+

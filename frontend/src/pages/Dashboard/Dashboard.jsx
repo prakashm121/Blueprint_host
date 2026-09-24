@@ -5,7 +5,7 @@ import { api } from '../../api';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import {
-  Bell, Briefcase, ClipboardList, MessageSquare,
+  Briefcase, ClipboardList, MessageSquare,
   Sparkles, ChevronRight, Target, BookOpen, Code2,
   FileText, LogOut, CheckSquare, Square, Plus, User, Map,
   Brain, BarChart2
@@ -101,7 +101,6 @@ export default function Dashboard() {
         dsa_solved: dsaSolved || 0,
         dsa_total,
         unread_notifications_count: unreadCount || 0,
-        focus_tasks: []
       };
     },
     retry: false,
@@ -207,8 +206,8 @@ export default function Dashboard() {
 
   // -- Helper Functions --
   const getReadinessLabel = (score) => {
-    if (score >= 85) return "Top 10% â€¢ Placement Ready";
-    if (score >= 75) return "Needs Work â€¢ Action Needed";
+    if (score >= 85) return "Top 10% &bull; Placement Ready";
+    if (score >= 75) return "Needs Work &bull; Action Needed";
     return "Critical Review Required";
   };
 
@@ -557,7 +556,7 @@ export default function Dashboard() {
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-primary-fixed-dim uppercase tracking-wider">AI Mentor Insights â€¢ Action Required</h4>
+              <h4 className="text-xs font-bold text-primary-fixed-dim uppercase tracking-wider">AI Mentor Insights &bull; Action Required</h4>
               <p className="text-sm font-semibold text-on-surface mt-1">Ready for your next targeted interview session?</p>
               <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed max-w-2xl">
                 Break down your comprehensive goals into structured milestones via the planner dashboard. For live mock review metrics, direct evaluation checks, and resume optimizations, chat with your AI Mentor.

@@ -197,7 +197,7 @@ export default function QuizEngine() {
 
               ) : !quizStarted ? (
 
-                /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• STEP 1: LOBBY â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+                /* â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull; STEP 1: LOBBY â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull; */
                 <div className="space-y-6 bg-surface-container border border-border-subtle rounded-2xl p-6 shadow-sm">
                   <div>
                     <h3 className="text-lg font-bold text-on-surface">Targeted Training Setup</h3>
@@ -261,7 +261,7 @@ export default function QuizEngine() {
 
               ) : !quizCompleted ? (
 
-                /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• STEP 2: ACTIVE QUIZ â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+                /* â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull; STEP 2: ACTIVE QUIZ â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull; */
                 <div className="bg-surface-container border border-border-subtle rounded-2xl p-6 shadow-sm space-y-6">
                   <div className="flex justify-between items-center border-b border-border-subtle/50 pb-4">
                     <div className="space-y-1">
@@ -353,7 +353,7 @@ export default function QuizEngine() {
 
               ) : (
 
-                /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• STEP 3: RESULTS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+                /* â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull; STEP 3: RESULTS â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull; */
                 <div className="space-y-4">
 
                   {/* Score summary card */}
@@ -460,17 +460,12 @@ export default function QuizEngine() {
                       </div>
 
                       {/* Review nav */}
-                      <div className="flex items-center justify-between pt-2 border-t border-border-subtle/50">
-                        <button disabled={reviewIdx === 0} onClick={() => setReviewIdx(prev => prev - 1)}
-                          className="px-4 py-2 bg-surface-container-high border border-border-subtle text-xs font-semibold rounded-xl text-on-surface-variant hover:text-on-surface disabled:opacity-30 transition-all flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-sm">arrow_back</span> Previous
-                        </button>
-
+                      <div className="flex flex-col gap-4 pt-4 border-t border-border-subtle/50">
                         {/* Jump map */}
-                        <div className="flex flex-wrap gap-1 justify-center max-w-[200px]">
+                        <div className="flex flex-wrap gap-1.5 justify-center">
                           {attemptResult.results.map((r, idx) => (
                             <button key={idx} onClick={() => setReviewIdx(idx)}
-                              className={`w-6 h-6 rounded-md text-[9px] font-bold border transition-all flex items-center justify-center ${reviewIdx === idx
+                              className={`w-6 h-6 rounded-md text-[10px] font-bold border transition-all flex items-center justify-center ${reviewIdx === idx
                                   ? 'bg-primary border-primary text-white'
                                   : r.is_correct
                                     ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
@@ -484,10 +479,17 @@ export default function QuizEngine() {
                           ))}
                         </div>
 
-                        <button disabled={reviewIdx === attemptResult.results.length - 1} onClick={() => setReviewIdx(prev => prev + 1)}
-                          className="px-4 py-2 bg-surface-container-high border border-border-subtle text-xs font-semibold rounded-xl text-on-surface-variant hover:text-on-surface disabled:opacity-30 transition-all flex items-center gap-1.5">
-                          Next <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                        </button>
+                        <div className="flex justify-between w-full">
+                          <button disabled={reviewIdx === 0} onClick={() => setReviewIdx(prev => prev - 1)}
+                            className="px-4 py-2 bg-surface-container-high border border-border-subtle text-xs font-semibold rounded-xl text-on-surface-variant hover:text-on-surface disabled:opacity-30 transition-all flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-sm">arrow_back</span> Previous
+                          </button>
+
+                          <button disabled={reviewIdx === attemptResult.results.length - 1} onClick={() => setReviewIdx(prev => prev + 1)}
+                            className="px-4 py-2 bg-surface-container-high border border-border-subtle text-xs font-semibold rounded-xl text-on-surface-variant hover:text-on-surface disabled:opacity-30 transition-all flex items-center gap-1.5">
+                            Next <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}

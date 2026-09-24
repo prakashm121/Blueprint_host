@@ -18,7 +18,6 @@ from app.core.cache import get_cache, set_cache
 from app.core.role_skills import (
     ROLE_ASSESSMENT_SKILLS,
     get_key_to_label,
-    get_category_for_key,
     get_skills_in_category,
 )
 

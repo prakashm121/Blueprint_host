@@ -5,7 +5,7 @@ import qaData from '../../data/qa_filters.json';
 import dsaData from '../../data/filters.json';
 import {
   ArrowLeft, Save, User, GraduationCap, Briefcase,
-  Building2, X, Plus, Code2, Link as LinkIcon, Phone, FileText
+  X, Plus, Code2, Link as LinkIcon, Phone
 } from 'lucide-react';
 
 const SECTIONS = [

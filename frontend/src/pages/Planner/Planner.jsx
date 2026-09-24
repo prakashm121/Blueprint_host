@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { api } from '../../api';
 import {
   Plus, Check, Trash2, Clock, LayoutList,
-  ArrowLeft, Sparkles, Target, Flame, Tag
+  ArrowLeft, Sparkles, Target, Tag
 } from 'lucide-react';
 
 const CATEGORY_COLORS = {
@@ -84,14 +84,36 @@ export default function Planner() {
     }
   };
 
-  const toggleTask = async (task) => {
-    const newStatus = task.status === 'Completed' ? 'Pending' : 'Completed';
-    try {
-      await api.patch(`/api/v1/planner/tasks/${task.id}`, { status: newStatus });
-      fetchPlan();
-    } catch (err) {
-      console.error(err);
+  const toggleMutation = useMutation({
+    mutationFn: async ({ taskId, newStatus }) => {
+      await api.patch(`/api/v1/planner/tasks/${taskId}`, { status: newStatus });
+    },
+    onMutate: async ({ taskId, newStatus }) => {
+      await queryClient.cancelQueries(['plannerPlan']);
+      const previousPlan = queryClient.getQueryData(['plannerPlan']);
+      if (previousPlan) {
+        queryClient.setQueryData(['plannerPlan'], {
+          ...previousPlan,
+          tasks: previousPlan.tasks.map(t =>
+            t.id === taskId ? { ...t, status: newStatus } : t
+          )
+        });
+      }
+      return { previousPlan };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousPlan) {
+        queryClient.setQueryData(['plannerPlan'], context.previousPlan);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries(['plannerPlan']);
     }
+  });
+
+  const toggleTask = (task) => {
+    const newStatus = (task.status || '').toLowerCase() === 'completed' ? 'Pending' : 'Completed';
+    toggleMutation.mutate({ taskId: task.id, newStatus });
   };
 
   const deleteTask = async (taskId) => {
@@ -159,7 +181,7 @@ export default function Planner() {
     if (!plan?.tasks) return 0;
     const catTasks = plan.tasks.filter(t => t.category?.toLowerCase() === catName.toLowerCase());
     if (catTasks.length === 0) return 0;
-    const completed = catTasks.filter(t => t.status === 'Completed').length;
+    const completed = catTasks.filter(t => (t.status || '').toLowerCase() === 'completed').length;
     return Math.round((completed / catTasks.length) * 100);
   };
 
@@ -180,10 +202,10 @@ export default function Planner() {
 
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-12 selection:bg-sky-500/30">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-12 selection:bg-sky-500/30 w-full max-w-[100vw] overflow-x-hidden">
 
       {/* Top Header Bar */}
-      <div className="w-full border-b border-slate-900 px-6 py-4 flex items-center justify-between bg-slate-950/80 backdrop-blur sticky top-0 z-50">
+      <div className="w-full border-b border-slate-900 px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-950/80 backdrop-blur sticky top-0 z-50">
         <div className="flex items-center gap-4">
           <Link
             to="/dashboard"
@@ -195,7 +217,7 @@ export default function Planner() {
             <h1 className="text-lg font-bold text-white tracking-tight">Weekly Planner</h1>
             {plan ? (
               <p className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">
-                Week • {plan.start_date} — {plan.end_date}
+                Week &bull; {plan.start_date} — {plan.end_date}
               </p>
             ) : (
               <p className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">
@@ -373,7 +395,7 @@ export default function Planner() {
               ) : (
                 filteredTasks.map((task) => {
                   const cat = CATEGORY_COLORS[task.category] || CATEGORY_COLORS.Custom;
-                  const isDone = task.status === 'Completed';
+                  const isDone = (task.status || '').toLowerCase() === 'completed';
                   return (
                     <div
                       key={task.id}

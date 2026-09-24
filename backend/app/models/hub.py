@@ -1,7 +1,7 @@
 # app/models/hub.py
 
 from sqlalchemy import (
-    Column, Integer, String, Text, Boolean,
+    Column, Integer, String, Text,
     DateTime, Index, Float
 )
 from sqlalchemy.dialects.postgresql import ARRAY
