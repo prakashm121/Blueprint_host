@@ -160,7 +160,7 @@ celery -A app.workers.celery_app worker --loglevel=info --pool=solo --without-go
 # --- Frontend ---
 cd frontend
 npm install
-# create .env with VITE_API_URL, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+copy .env.example .env   # then fill in VITE_API_BASE_URL, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 npm run dev
 ```
 
@@ -176,7 +176,7 @@ No Docker/`docker-compose.yml` exists in this repo — local dev is native venv 
 
 ## Environment variables
 
-See the full, verified lists in [`backend/README.md`](./backend/README.md#environment-variables) and [`frontend/README.md`](./frontend/README.md#environment-variables) — both repos' `.env.example`/`.env` files have drifted from what the code actually reads, and the READMEs document the real names.
+See the full, verified lists in [`backend/README.md`](./backend/README.md#environment-variables) and [`frontend/README.md`](./frontend/README.md#environment-variables) — `frontend/.env.example` is current (the real `frontend/.env` is git-ignored; set the same three variables in Vercel), but `backend/.env.example` has drifted from what the code actually reads, so use the backend README's list.
 
 ---
 
@@ -211,7 +211,7 @@ This shape was deliberately chosen to stay within free tiers without running mul
 
 Tracked honestly rather than hidden:
 
-- **Env var drift**: `frontend/.env` sets `VITE_API_URL` but the code reads `VITE_API_BASE_URL`; `backend/.env.example` still lists SMTP/legacy-worker-mode vars that no longer exist in config and is missing vars the app actually needs (`SUPABASE_URL`, `INTERNAL_TRIGGER_SECRET`, etc). Full detail in each sub-README's Known Gaps section.
+- **`backend/.env.example` is stale**: it still lists SMTP/legacy-worker-mode vars that no longer exist in config and is missing vars the app actually needs (`SUPABASE_URL`, `INTERNAL_TRIGGER_SECRET`, `APP_ENV`, the rate-limit variables, etc). The real list is in `backend/README.md`.
 - **No email delivery is implemented anywhere**, despite some legacy scaffolding (`SMTP_*` env vars, an unused transactional outbox) suggesting otherwise. All notifications are in-app only.
 - **The outbox pattern (`OutboxEvent` table, handlers, event types) is intentionally dormant** — kept for a future feature that needs real at-least-once delivery around an external call, but has zero live callers today.
 - **`backend/scratch_seed_data.py` hardcodes a stale path** to a differently-named local clone of this repo.

@@ -50,7 +50,7 @@ frontend/
 ├── vite.config.js                  # react() + tailwindcss() plugins only, no aliases/proxy
 ├── vercel.json                     # single SPA rewrite rule for client-side routing
 ├── package.json
-├── .env                            # no .env.example currently checked in
+├── .env.example                    # copy to .env (the real .env is git-ignored)
 │
 └── src/
     ├── main.jsx                    # React entry point
@@ -98,7 +98,7 @@ frontend/
 ```powershell
 cd frontend
 npm install
-# create .env with VITE_API_URL / VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY — see below
+copy .env.example .env   # then fill in the values — see below
 npm run dev
 ```
 
@@ -113,13 +113,15 @@ npm run preview
 
 ## Environment variables
 
+Copy `.env.example` to `.env` (the real `.env` is git-ignored and is no longer committed):
+
 ```env
-VITE_API_URL=http://localhost:8000        # see the mismatch note below
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
+VITE_API_BASE_URL=http://localhost:8000   # FastAPI backend base URL, no trailing slash
+VITE_SUPABASE_URL=                        # Supabase dashboard > Settings > API
+VITE_SUPABASE_ANON_KEY=                   # the publishable (anon) key
 ```
 
-**Known mismatch**: `src/api.js` actually reads `import.meta.env.VITE_API_BASE_URL`, not `VITE_API_URL`. The checked-in `.env` sets `VITE_API_URL`, which the code never reads — so in practice `api.js` silently falls back to its hardcoded default (`http://localhost:8000`). This works by accident in local dev (that's the right default anyway) but **will break in any deployed environment** unless `VITE_API_BASE_URL` (not `VITE_API_URL`) is the variable actually set on Vercel. Fix one side or the other before deploying to a new environment.
+Everything prefixed `VITE_` is bundled into the browser build, so never put secrets here. The variable the code reads for the backend URL is `VITE_API_BASE_URL` (`src/api.js`, `App.jsx`, `Mentor.jsx`). An older `.env` used `VITE_API_URL`, which the code never read — if you have one locally, rename it. On Vercel, set all three variables in the project's Environment Variables settings.
 
 ---
 
@@ -214,10 +216,7 @@ The backend rate-limits AI features (see the backend README). The UI surfaces th
 
 ## Known gaps
 
-- **`VITE_API_URL` vs `VITE_API_BASE_URL` mismatch** — see [Environment variables](#environment-variables). Confirm which one is actually configured wherever this is deployed.
 - **No response interceptor / token refresh** in `api.js` — a 401 just fails the request rather than transparently retrying after a session refresh.
-- **No `.env.example`** checked into `frontend/` — only a real `.env`. Worth adding one (with blank values) so new contributors don't have to guess variable names.
 - **No Content-Security-Policy header yet.** The app needs three.js, Supabase and the Render API allowed, so a CSP has to be tested in a browser (start with `Content-Security-Policy-Report-Only`) rather than added blind.
-- **`frontend/.env` is tracked in git** (public values only, but it bypasses `.gitignore`). Don't untrack it until the variables are confirmed set in Vercel's dashboard, or the production build will lose them.
 - Supabase's own client keeps its session in `localStorage`, so any script-injection bug could still read it — the sanitising and headers above are what reduce that risk.
 - Two data-fetching paths (backend API vs direct Supabase) with no single documented rule for which a new feature should use — see [Data fetching](#data-fetching--the-hybrid-model) for the current de facto pattern.
