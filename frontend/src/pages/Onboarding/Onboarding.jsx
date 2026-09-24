@@ -24,16 +24,16 @@ const CONFIDENCE_OPTIONS = [
 function StepIndicator({ current }) {
   const idx = STEPS.indexOf(current);
   return (
-    <div className="mb-8 flex items-center justify-center gap-2">
+    <div className="mb-6 flex items-center justify-center gap-1.5 sm:mb-8 sm:gap-2">
       {STEPS.map((step, i) => (
-        <div key={step} className="flex items-center gap-2">
-          <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${
+        <div key={step} className="flex items-center gap-1.5 sm:gap-2">
+          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-300 sm:h-8 sm:w-8 ${
             i <= idx ? 'bg-highlight text-ink' : 'bg-surface-container text-line'
           }`}>
-            {i < idx ? <Check className="h-4 w-4" /> : i + 1}
+            {i < idx ? <Check className="pop-check h-4 w-4" /> : i + 1}
           </div>
           {i < STEPS.length - 1 && (
-            <div className={`h-0.5 w-8 ${i < idx ? 'bg-highlight' : 'bg-surface-container'}`} />
+            <div className={`h-0.5 w-5 transition-colors duration-300 sm:w-8 ${i < idx ? 'bg-highlight' : 'bg-surface-container'}`} />
           )}
         </div>
       ))}
@@ -43,7 +43,7 @@ function StepIndicator({ current }) {
 
 function ConfidenceRating({ label, value, onChange }) {
   return (
-    <div className="rounded-2xl border border-border-subtle bg-background-deep/60 p-4">
+    <div className="rounded-2xl border border-border-subtle bg-background-deep/60 p-3.5 sm:p-4">
       <p className="text-sm font-medium text-paper mb-3">{label}</p>
       <div className="flex flex-wrap gap-2">
         {CONFIDENCE_OPTIONS.map(opt => (
@@ -51,7 +51,8 @@ function ConfidenceRating({ label, value, onChange }) {
             key={opt.value}
             type="button"
             onClick={() => onChange(opt.value)}
-            className={`rounded-xl px-3 py-1.5 text-xs font-medium transition border ${
+            aria-pressed={value === opt.value}
+            className={`min-h-9 rounded-xl px-3 py-1.5 text-xs font-medium transition border ${
               value === opt.value
                 ? 'bg-highlight border-highlight text-ink'
                 : 'border-border-subtle bg-background-deep text-on-surface hover:border-outline'
@@ -209,14 +210,14 @@ export default function Onboarding() {
   // Personalization summary — shown after goals, before roadmap generation
   if (showSummary) {
     return (
-      <div className="animate-page-in min-h-screen bg-background-deep px-6 py-10 text-paper sm:px-8">
-        <div className="mx-auto max-w-2xl rounded-3xl border border-border-subtle bg-surface-card/95 p-8 shadow-2xl backdrop-blur">
+      <div className="animate-page-in min-h-screen bg-background-deep px-3 py-6 text-paper sm:px-8 sm:py-10">
+        <div className="mx-auto max-w-2xl rounded-2xl border border-border-subtle bg-surface-card/95 p-5 shadow-2xl backdrop-blur sm:rounded-3xl sm:p-8">
           <div className="text-center mb-8">
-            <p className="text-sm uppercase tracking-[0.35em] text-highlight/80 mb-2">Almost there</p>
-            <h1 className="text-3xl font-semibold text-paper">Here's what Blueprint learned about you</h1>
+            <p className="text-xs uppercase tracking-[0.25em] text-highlight/80 sm:text-sm sm:tracking-[0.35em] mb-2">Almost there</p>
+            <h1 className="text-2xl font-semibold text-paper sm:text-3xl">Here's what Blueprint learned about you</h1>
             <p className="text-line text-sm mt-2">Your roadmap will be tailored to all of this.</p>
           </div>
-          <div className="space-y-3 mb-8">
+          <div className="stagger-list space-y-3 mb-8">
             {[
               { label: 'Target Role', value: goals.target_role },
               { label: 'Target Companies', value: goals.target_companies.join(', ') || 'Not selected' },
@@ -224,9 +225,9 @@ export default function Onboarding() {
               { label: 'Weak Areas', value: weakAreas.slice(0, 3).join(', ') || 'None identified', warn: weakAreas.length > 0 },
               { label: 'Strong Areas', value: strongAreas.slice(0, 3).join(', ') || 'None identified yet' },
             ].map(row => (
-              <div key={row.label} className="flex items-start justify-between rounded-xl border border-border-subtle bg-background-deep/60 px-4 py-3">
-                <span className="text-sm text-line font-medium w-44 shrink-0">{row.label}</span>
-                <span className={`text-sm font-semibold text-right ${row.warn ? 'text-amber-400' : 'text-primary-fixed'}`}>{row.value}</span>
+              <div key={row.label} className="flex flex-col gap-1 rounded-xl border border-border-subtle bg-background-deep/60 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <span className="text-sm text-line font-medium sm:w-44 sm:shrink-0">{row.label}</span>
+                <span className={`min-w-0 break-words text-sm font-semibold sm:text-right ${row.warn ? 'text-amber-400' : 'text-primary-fixed'}`}>{row.value}</span>
               </div>
             ))}
           </div>
@@ -243,11 +244,11 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="animate-page-in min-h-screen bg-background-deep px-6 py-10 text-paper sm:px-8">
-      <div className="mx-auto max-w-2xl rounded-3xl border border-border-subtle bg-surface-card/95 p-8 shadow-2xl shadow-ink/40 backdrop-blur">
+    <div className="animate-page-in min-h-screen bg-background-deep px-3 py-6 text-paper sm:px-8 sm:py-10">
+      <div className="mx-auto max-w-2xl rounded-2xl border border-border-subtle bg-surface-card/95 p-5 shadow-2xl shadow-ink/40 backdrop-blur sm:rounded-3xl sm:p-8">
         <div className="mb-4 space-y-3 text-center">
-          <p className="text-sm uppercase tracking-[0.35em] text-highlight/80">Onboarding</p>
-          <h1 className="text-3xl font-semibold text-paper">
+          <p className="text-xs uppercase tracking-[0.25em] text-highlight/80 sm:text-sm sm:tracking-[0.35em]">Onboarding</p>
+          <h1 className="text-2xl font-semibold text-paper sm:text-3xl">
             {step === 'profile' && 'Tell us about yourself'}
             {step === 'goals' && 'Set your career goals'}
             {step === 'role_skills' && 'Rate your current knowledge'}
@@ -330,7 +331,7 @@ export default function Onboarding() {
                 </div>
               </div>
             ))}
-            <button type="button" onClick={saveRoleSkills} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-highlight px-4 py-3 text-base font-semibold text-ink transition hover:bg-primary-fixed">
+            <button type="button" onClick={saveRoleSkills} className="sticky bottom-3 z-10 flex w-full items-center justify-center gap-2 rounded-2xl bg-highlight px-4 py-3 text-base font-semibold text-ink shadow-lg shadow-ink/30 transition hover:bg-primary-fixed">
               Continue <ChevronRight className="h-4 w-4" />
             </button>
           </div>
