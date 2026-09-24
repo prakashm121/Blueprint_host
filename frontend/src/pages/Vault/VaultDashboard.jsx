@@ -1,18 +1,19 @@
-﻿import { useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import {
   useInfiniteQuery,
   useMutation,
   useQueryClient
 } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
+import { usePresence } from '../../lib/motion';
 
 const TYPE_METADATA = {
   BOOKMARK: {
     icon: 'bookmark',
     label: 'Bookmark',
-    color: 'text-blue-400',
-    bg: 'bg-blue-400/10',
-    border: 'border-blue-400/20'
+    color: 'text-secondary',
+    bg: 'bg-secondary/10',
+    border: 'border-secondary/20'
   },
   AI_INSIGHT: {
     icon: 'lightbulb',
@@ -54,6 +55,14 @@ export default function VaultDashboard() {
 
   const [activeTab, setActiveTab] = useState('ALL');
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const noteModal = usePresence(showNoteModal);
+
+  useEffect(() => {
+    if (!showNoteModal) return undefined;
+    const onKey = (e) => e.key === 'Escape' && setShowNoteModal(false);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showNoteModal]);
   const [newNote, setNewNote] = useState({
     title: '',
     content: ''
@@ -254,7 +263,7 @@ export default function VaultDashboard() {
 
             <button
               onClick={() => setShowNoteModal(true)}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-primary hover:brightness-110 shadow-sm transition-all flex items-center gap-2 self-start lg:self-center"
+              className="px-4 py-2 rounded-xl text-xs font-bold text-on-primary bg-primary hover:brightness-110 shadow-sm transition-all flex items-center gap-2 self-start lg:self-center"
             >
               <span className="material-symbols-outlined text-sm">
                 add
@@ -344,7 +353,7 @@ export default function VaultDashboard() {
           ) : !error ? (
 
             /* Vault Grid */
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+            <div key={activeTab} className="stagger-list grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
 
               {filteredItems.map((item) => {
 
@@ -360,7 +369,7 @@ export default function VaultDashboard() {
 
                   <div
                     key={item.id}
-                    className="bg-surface-container border border-border-subtle rounded-2xl p-5 hover:border-border-strong transition-all flex flex-col h-full space-y-4 group"
+                    className="lift bg-surface-container border border-border-subtle rounded-2xl p-5 hover:border-outline flex flex-col h-full space-y-4 group"
                   >
 
                     {/* Card Header */}
@@ -381,7 +390,7 @@ export default function VaultDashboard() {
                       <button
                         onClick={() => handleDelete(item.id)}
                         disabled={deleteMutation.isPending}
-                        className="text-on-surface-variant hover:text-rose-400 transition-colors opacity-0 group-hover:opacity-100 p-1 disabled:opacity-50"
+                        className="text-on-surface-variant hover:text-rose-400 transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 p-1 disabled:opacity-50"
                         title="Delete from Vault"
                       >
 
@@ -474,11 +483,20 @@ export default function VaultDashboard() {
       </div>
 
       {/* Quick Add Note Modal */}
-      {showNoteModal && (
+      {noteModal.mounted && (
 
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Add a note">
 
-          <div className="bg-surface-container w-full max-w-lg rounded-2xl border border-border-subtle shadow-2xl overflow-hidden animate-fadeIn">
+          <div
+            className={`absolute inset-0 bg-black/60 backdrop-blur-sm ${noteModal.closing ? 'backdrop-out' : 'backdrop-in'}`}
+            onClick={() => setShowNoteModal(false)}
+          />
+
+          <div
+            className={`relative bg-surface-container w-full max-w-lg rounded-2xl border border-border-subtle shadow-2xl overflow-hidden ${
+              noteModal.closing ? 'dialog-out pointer-events-none' : 'dialog-in'
+            }`}
+          >
 
             {/* Modal Header */}
             <div className="p-4 border-b border-border-subtle flex justify-between items-center bg-surface-container-low">

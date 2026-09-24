@@ -1,9 +1,10 @@
-﻿import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+﻿import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams, Link } from 'react-router-dom';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
-import { api } from '../../api';
 import qaData from '../../data/qa_filters.json';
+import FilterSheet, { FilterBar, FilterSelect } from '../../components/FilterSheet';
+import { usePresence } from '../../lib/motion';
 
 // High-fidelity iconography & descriptive copy lookup map for roles (Including our virtual UI/UX Designer role)
 const ROLE_METADATA = {
@@ -22,7 +23,6 @@ const ROLE_METADATA = {
 };
 
 export default function InterviewQAEngine() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Active filter states synchronized directly to URL parameters
@@ -33,15 +33,13 @@ export default function InterviewQAEngine() {
 
   const queryClient = useQueryClient();
   const [selectedQuestion, setSelectedQuestion] = useState(null);
+  const [detailOpen, setDetailOpen] = useState(false); // phones: answer panel slides over the list
+  const panel = usePresence(detailOpen, 180);
   const [revealedAnswer, setRevealedAnswer] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
 
   // Combine the DB roles
   const visibleRoles = qaData.roles;
-
-  // Handle category option matrix context drops safely
-  const relevantCategories = activeRole && qaData.role_categories[activeRole] ? qaData.role_categories[activeRole] : qaData.categories;
-  const relevantSkills = activeCategory && qaData.category_skills && qaData.category_skills[activeCategory] ? qaData.category_skills[activeCategory] : [];
 
   const updateQueryParam = (key, val) => {
     const newParams = new URLSearchParams(searchParams);
@@ -84,18 +82,18 @@ export default function InterviewQAEngine() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const questions = data ? data.pages.flatMap(page => page.items) : [];
+  const questions = useMemo(() => (data ? data.pages.flatMap(page => page.items) : []), [data]);
   const loadingList = status === 'pending';
   const error = queryError ? 'Failed to acquire questions from active index.' : null;
   const hasMore = hasNextPage;
 
-  // Auto-select first item
+  const isWide = () => window.matchMedia('(min-width: 1024px)').matches;
+
+  // Side-by-side layout shows the first question straight away; on phones the list comes first.
   useEffect(() => {
-    if (questions.length > 0 && !selectedQuestion && !loadingList) {
-      setSelectedQuestion(questions[0]);
-    } else if (questions.length === 0 && !loadingList) {
-      setSelectedQuestion(null);
-    }
+    if (loadingList) return;
+    if (questions.length === 0) setSelectedQuestion(null);
+    else if (!selectedQuestion && isWide()) setSelectedQuestion(questions[0]);
   }, [questions, selectedQuestion, loadingList]);
 
   const loadMore = () => {
@@ -108,8 +106,53 @@ export default function InterviewQAEngine() {
       setSelectedQuestion(q);
       setRevealedAnswer(false);
       setBookmarked(false);
+      if (!isWide()) setDetailOpen(true);
     }
   };
+
+  // Phone answer panel: Escape closes it.
+  useEffect(() => {
+    if (!detailOpen) return undefined;
+    const onKey = (e) => e.key === 'Escape' && setDetailOpen(false);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [detailOpen]);
+
+  // ---- Filters popup: drafted, then applied together ----
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draft, setDraft] = useState({ role: '', category: '', skill: '', difficulty: '' });
+  const openFilters = () => {
+    setDraft({ role: activeRole, category: activeCategory, skill: activeSkill, difficulty: activeDifficulty });
+    setFiltersOpen(true);
+  };
+  const closeFilters = useCallback(() => setFiltersOpen(false), []);
+  const applyFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    for (const [k, v] of Object.entries(draft)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    setSearchParams(next);
+    setSelectedQuestion(null);
+    setRevealedAnswer(false);
+    setFiltersOpen(false);
+  };
+  // The category list depends on the role, and the skill list on the category.
+  const draftCategories = draft.role && qaData.role_categories[draft.role] ? qaData.role_categories[draft.role] : qaData.categories;
+  const draftSkills = draft.category && qaData.category_skills?.[draft.category] ? qaData.category_skills[draft.category] : [];
+  const setDraftRole = (role) =>
+    setDraft((d) => {
+      const cats = role && qaData.role_categories[role] ? qaData.role_categories[role] : qaData.categories;
+      const keepCat = cats.includes(d.category);
+      return { ...d, role, category: keepCat ? d.category : '', skill: keepCat ? d.skill : '' };
+    });
+
+  const activeFilters = [
+    activeRole && { key: 'role', label: activeRole },
+    activeCategory && { key: 'category', label: activeCategory },
+    activeSkill && { key: 'skill', label: activeSkill },
+    activeDifficulty && { key: 'difficulty', label: activeDifficulty },
+  ].filter(Boolean);
 
   const saveMutation = useMutation({
     mutationFn: async ({ q, itemType }) => {
@@ -153,293 +196,383 @@ export default function InterviewQAEngine() {
     });
   };
 
-  // Needed variables for UI compatibility
-  const loadingDetail = false;
+  const position = selectedQuestion ? questions.findIndex((x) => x.id === selectedQuestion.id) + 1 : 0;
+  const difficultyTone = (d) => (d === 'Easy' ? 'text-emerald-400' : d === 'Medium' ? 'text-amber-400' : 'text-rose-400');
+
+  const detail = selectedQuestion ? (
+    <div className="space-y-6 rounded-2xl border border-border-subtle bg-surface-container p-5 shadow-sm sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle/50 pb-4">
+        <div className="space-y-1.5">
+          <span className="inline-block rounded border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+            {selectedQuestion.skill ? `${selectedQuestion.category} / ${selectedQuestion.skill}` : selectedQuestion.category}
+          </span>
+          <p className="text-xs text-on-surface-variant">
+            Difficulty: <span className={`font-semibold ${difficultyTone(selectedQuestion.difficulty)}`}>{selectedQuestion.difficulty}</span>
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleBookmark}
+            disabled={bookmarking || bookmarked}
+            data-tip={bookmarked ? 'Saved to vault' : 'Save to vault'}
+            aria-label={bookmarked ? 'Saved to vault' : 'Save to vault'}
+            className={`inline-flex h-10 w-10 items-center justify-center rounded-lg border transition-colors ${
+              bookmarked
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                : 'border-border-subtle bg-surface-container-low text-on-surface-variant hover:text-on-surface'
+            }`}
+          >
+            <span key={String(bookmarked)} className={`material-symbols-outlined text-[20px] ${bookmarked ? 'pop' : ''}`}>
+              {bookmarked ? 'bookmark_added' : 'bookmark'}
+            </span>
+          </button>
+          <Link
+            to={`/mentor?teach=${encodeURIComponent(selectedQuestion?.title || '')}`}
+            data-tip="Ask the mentor to teach this"
+            aria-label="Ask the AI mentor to teach this"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border-subtle bg-surface-container-low text-on-surface-variant transition-colors hover:border-primary/30 hover:text-primary"
+          >
+            <span className="material-symbols-outlined text-[20px]">school</span>
+          </Link>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <span className="block text-xs font-semibold text-primary">Question</span>
+        <h3 className="text-lg font-bold leading-snug text-on-surface">{selectedQuestion.title}</h3>
+      </div>
+
+      <div className="space-y-4 border-t border-border-subtle/40 pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="block text-xs font-semibold text-emerald-400">Answer</span>
+          {!revealedAnswer && (
+            <button
+              onClick={() => setRevealedAnswer(true)}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-emerald-500 px-3 text-xs font-bold text-white shadow-sm transition-all hover:brightness-110"
+            >
+              <span className="material-symbols-outlined text-[16px]">visibility</span> Show answer
+            </button>
+          )}
+        </div>
+
+        {revealedAnswer ? (
+          <div className="space-y-3 rounded-xl border border-border-subtle bg-surface-container-low p-4" style={{ animation: 'dialog-in var(--dur-3) var(--ease-settle) both' }}>
+            <p className="whitespace-pre-line text-sm leading-relaxed text-on-surface-variant">
+              {selectedQuestion.body || 'No answer has been written for this question yet.'}
+            </p>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setRevealedAnswer(true)}
+            className="group w-full cursor-pointer rounded-xl border border-dashed border-border-subtle bg-surface-container-low/60 p-8 text-center transition-all hover:border-primary/50 hover:bg-surface-container-low/90"
+          >
+            <span className="material-symbols-outlined mb-1 block text-2xl text-on-surface-variant/50 transition-colors group-hover:text-primary">lock</span>
+            <span className="block text-sm font-medium text-on-surface-variant transition-colors group-hover:text-on-surface">Try answering it yourself first</span>
+            <span className="mt-0.5 block text-xs text-on-surface-variant/70">Then tap here to compare with the model answer.</span>
+          </button>
+        )}
+      </div>
+
+      {revealedAnswer && (
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border-subtle/40 pt-4">
+          <button
+            onClick={() => setRevealedAnswer(false)}
+            className="min-h-9 px-3 text-xs font-medium text-on-surface-variant transition-all hover:text-on-surface"
+          >
+            Hide answer
+          </button>
+          <button
+            onClick={handleMarkReviewedAndNext}
+            disabled={markingReviewed}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 px-4 text-xs font-bold text-primary transition-all hover:bg-primary hover:text-on-primary disabled:opacity-50"
+          >
+            {markingReviewed ? 'Saving…' : 'Save and next question'}
+            <span className="material-symbols-outlined text-[16px]">done_all</span>
+          </button>
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
-    <div className="bg-background-deep text-on-surface font-body-base antialiased min-h-screen">
-      <div className="flex flex-col min-h-screen">
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
-          
-          {/* Section Navigation Header Row */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
+    <div className="min-h-full bg-background-deep text-on-surface antialiased">
+      <div className="mx-auto w-full max-w-7xl space-y-5 p-4 sm:p-6">
+        {/* Header: title and filters */}
+        <div className="space-y-3 border-b border-border-subtle pb-4">
+          <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
-              <h2 className="text-2xl font-bold text-on-surface tracking-tight">Interview Q&A</h2>
-              <p className="text-xs text-on-surface-variant">Review advanced target technical query maps across domain contexts.</p>
+              <h2 className="type-title text-2xl text-on-surface">Interview Q&amp;A</h2>
+              <p className="text-sm text-on-surface-variant">Open-ended questions by role, topic and skill. Tap one to practise it.</p>
             </div>
+            <p className="text-sm tabular-nums text-on-surface-variant">
+              {loadingList ? 'Loading…' : `${questions.length}${hasMore ? '+' : ''} questions`}
+            </p>
           </div>
+          {/* Phones: filters open in a popup */}
+          <div className="md:hidden">
+            <FilterBar active={activeFilters} onOpen={openFilters} onRemove={(key) => updateQueryParam(key, '')} />
+          </div>
+        </div>
 
-          {/* Role Specification Grid (Now Rendering visibleRoles with the 12th card setup) */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-widest text-primary">Role Specifications</h3>
-                <p className="text-[11px] text-on-surface-variant">Isolate specific technical tracking nodes to preview questions.</p>
-              </div>
-              {(activeRole || activeCategory || activeSkill || activeDifficulty) && (
-                <button 
-                  onClick={() => setSearchParams(new URLSearchParams())}
-                  className="text-xs text-primary hover:underline font-medium flex items-center gap-1"
+        {/* Larger screens: filters sit on the page and apply as you choose them */}
+        <div className="hidden space-y-4 md:block">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-on-surface">Role</h3>
+            {activeFilters.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSearchParams(new URLSearchParams())}
+                className="inline-flex cursor-pointer items-center gap-1 text-sm font-medium text-primary hover:underline"
+              >
+                <span className="material-symbols-outlined text-[18px]" aria-hidden="true">restart_alt</span> Clear filters
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-2 lg:grid-cols-4 lg:gap-3">
+            {visibleRoles.map((roleName) => {
+              const isActive = activeRole === roleName;
+              const meta = ROLE_METADATA[roleName] || { icon: 'shield_person', desc: '' };
+              return (
+                <button
+                  type="button"
+                  key={roleName}
+                  aria-pressed={isActive}
+                  onClick={() => updateQueryParam('role', isActive ? '' : roleName)}
+                  className={`lift group w-full cursor-pointer rounded-xl border p-3.5 text-left ${
+                    isActive ? 'border-primary bg-primary/10 shadow-sm' : 'border-border-subtle bg-surface-container hover:border-outline'
+                  }`}
                 >
-                  <span className="material-symbols-outlined text-sm">restart_alt</span> Clear Filter Configurations
+                  <span className="mb-1.5 flex items-center gap-2.5">
+                    <span className={`material-symbols-outlined text-base ${isActive ? 'text-primary' : 'text-on-surface-variant group-hover:text-primary'}`} aria-hidden="true">
+                      {meta.icon}
+                    </span>
+                    <span className="text-sm font-bold text-on-surface">{roleName}</span>
+                  </span>
+                  <span className="line-clamp-2 block text-xs leading-relaxed text-on-surface-variant/80">{meta.desc}</span>
                 </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {visibleRoles.map((roleName) => {
-                const isActive = activeRole === roleName;
-                const meta = ROLE_METADATA[roleName] || { icon: 'shield_person', desc: 'Domain specific parameters.' };
-                return (
-                  <div
-                    key={roleName}
-                    onClick={() => updateQueryParam('role', isActive ? '' : roleName)}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all group relative ${
-                      isActive ? 'bg-primary/10 border-primary shadow-sm' : 'bg-surface-container border-border-subtle hover:border-primary/40'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 mb-1.5">
-                      <span className={`material-symbols-outlined text-base ${isActive ? 'text-primary' : 'text-on-surface-variant group-hover:text-primary'}`}>
-                        {meta.icon}
-                      </span>
-                      <h4 className="font-bold text-xs text-on-surface tracking-tight">{roleName}</h4>
-                    </div>
-                    <p className="text-[10px] text-on-surface-variant/80 leading-relaxed line-clamp-2">{meta.desc}</p>
-                  </div>
-                );
-              })}
-            </div>
+              );
+            })}
           </div>
 
-          {/* Controls Filter Dropdowns Panel Block (4 Columns) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-surface-container p-4 rounded-xl border border-border-subtle">
-            
-            {/* Technical Category Select Node */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Dynamic Technical Category</label>
+          <div className="grid grid-cols-3 gap-4 rounded-xl border border-border-subtle bg-surface-container p-4">
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-on-surface-variant">Category</span>
               <select
                 value={activeCategory}
                 onChange={(e) => updateQueryParam('category', e.target.value)}
-                className="w-full bg-surface-container-low border border-border-subtle rounded-xl px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
+                className="w-full cursor-pointer rounded-xl border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none transition-all focus:border-primary/50"
               >
-                <option value="">{activeRole ? `All Categories for ${activeRole}` : 'Select a Category Track'}</option>
-                {relevantCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
+                <option value="">{activeRole ? `All categories for ${activeRole}` : 'All categories'}</option>
+                {(activeRole && qaData.role_categories[activeRole] ? qaData.role_categories[activeRole] : qaData.categories).map((c) => (
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
-            </div>
-
-            {/* Language / Specific Design Tool Selector Option */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Language / Specific Skill</label>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-on-surface-variant">Skill</span>
               <select
                 value={activeSkill}
                 onChange={(e) => updateQueryParam('skill', e.target.value)}
-                disabled={!activeCategory || relevantSkills.length === 0}
-                className="w-full bg-surface-container-low border border-border-subtle rounded-xl px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={!activeCategory || !(qaData.category_skills?.[activeCategory]?.length > 0)}
+                className="w-full cursor-pointer rounded-xl border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none transition-all focus:border-primary/50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {!activeCategory ? (
-                  <option value="">Select Category First</option>
-                ) : relevantSkills.length === 0 ? (
-                  <option value="">No sub-skills available</option>
+                  <option value="">Choose a category first</option>
+                ) : !(qaData.category_skills?.[activeCategory]?.length > 0) ? (
+                  <option value="">No skills for this category</option>
                 ) : (
                   <>
-                    <option value="">All Sub-Skills</option>
-                    {relevantSkills.map(sk => (
-                      <option key={sk} value={sk}>{sk}</option>
-                    ))}
+                    <option value="">All skills</option>
+                    {qaData.category_skills[activeCategory].map((sk) => <option key={sk} value={sk}>{sk}</option>)}
                   </>
                 )}
               </select>
-            </div>
-
-            {/* Complexity Rating Tiers */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Complexity Grading Map</label>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-on-surface-variant">Difficulty</span>
               <select
                 value={activeDifficulty}
                 onChange={(e) => updateQueryParam('difficulty', e.target.value)}
-                className="w-full bg-surface-container-low border border-border-subtle rounded-xl px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
+                className="w-full cursor-pointer rounded-xl border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none transition-all focus:border-primary/50"
               >
-                <option value="">All Complexity Tiers</option>
-                {qaData.difficulties.map(diff => (
-                  <option key={diff} value={diff}>{diff} Challenge</option>
-                ))}
+                <option value="">All difficulties</option>
+                {qaData.difficulties.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
-            </div>
+            </label>
+          </div>
+        </div>
 
-            {/* Live Counts Display Slot */}
-            <div className="flex items-end justify-start sm:justify-end">
-              <div className="text-right">
-                <span className="text-[10px] font-mono block text-on-surface-variant uppercase tracking-widest">Cached Nodes Available</span>
-                <span className="text-lg font-bold text-emerald-400 font-mono leading-none">
-                  {loadingList ? '...' : questions.length} Found
-                </span>
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+          {/* Question list */}
+          <div className="stagger-list space-y-2 lg:col-span-5 lg:max-h-[calc(100dvh-13rem)] lg:overflow-y-auto lg:pr-2">
+            {error && (
+              <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-6 text-center text-sm text-rose-400">
+                Questions didn&rsquo;t load. Check your connection and refresh the page.
               </div>
-            </div>
-          </div>
-
-          {/* Core Splitscreen Layout Blocks */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            
-            {/* Left Feed Panel Index */}
-            <div className="lg:col-span-5 space-y-2 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-              {loadingList ? (
-                <div className="p-8 text-center text-xs text-on-surface-variant flex flex-col items-center gap-2">
-                  <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                  Querying target indexes...
+            )}
+            {loadingList ? (
+              [...Array(5)].map((_, i) => (
+                <div key={i} className="shimmer space-y-2 rounded-xl border border-border-subtle bg-surface-container p-4">
+                  <div className="h-3.5 w-4/5 rounded bg-surface-container-high" />
+                  <div className="h-3 w-1/3 rounded bg-surface-container-high" />
                 </div>
-              ) : questions.length === 0 ? (
-                <div className="p-8 text-center bg-surface-container/40 border border-border-subtle rounded-xl text-xs text-on-surface-variant italic">
-                  No interview question nodes match the selected filter configuration vectors.
-                </div>
-              ) : (
-                questions.map((q) => {
-                  const isCurrent = selectedQuestion?.id === q.id;
-                  return (
-                    <div
-                      key={q.id}
-                      onClick={() => loadQuestionDetails(q.id)}
-                      className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all flex flex-col gap-2 relative overflow-hidden group ${
-                        isCurrent ? 'bg-surface-container-high border-primary shadow-sm' : 'bg-surface-container border-border-subtle hover:border-border-strong'
-                      }`}
-                    >
-                      <h4 className={`text-xs font-semibold leading-relaxed transition-colors ${isCurrent ? 'text-primary' : 'text-on-surface'}`}>
-                        {q.title}
-                      </h4>
-                      <div className="flex items-center justify-between gap-2 pt-1">
-                        <span className="text-[9px] px-1.5 py-0.5 bg-surface-container-low text-on-surface-variant rounded border border-border-subtle truncate max-w-[180px]">
-                          {q.skill ? `${q.category} &bull; ${q.skill}` : q.category}
-                        </span>
-                        <span className={`text-[9px] font-bold uppercase tracking-wider ${
-                          q.difficulty === 'Easy' ? 'text-emerald-400' : q.difficulty === 'Medium' ? 'text-amber-400' : 'text-rose-400'
-                        }`}>
-                          {q.difficulty}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-              {hasMore && (
-                <button
-                  onClick={loadMore}
-                  disabled={loadingMore}
-                  className="w-full py-2 text-xs font-semibold text-primary border border-primary/20 rounded-xl hover:bg-primary/10 transition-all disabled:opacity-50"
-                >
-                  {loadingMore ? 'Loadingâ€¦' : 'Load More'}
+              ))
+            ) : questions.length === 0 && !error ? (
+              <div className="rounded-xl border border-dashed border-border-subtle bg-surface-container/40 p-8 text-center">
+                <p className="text-sm text-on-surface-variant">No questions match these filters.</p>
+                <button type="button" onClick={openFilters} className="mt-3 text-sm font-semibold text-primary underline underline-offset-4">
+                  Change filters
                 </button>
-              )}
-            </div>
-
-            {/* Right Card Panel Space Workspace Container */}
-            <div className="lg:col-span-7">
-              {loadingDetail ? (
-                <div className="bg-surface-container border border-border-subtle rounded-2xl p-16 text-center text-xs text-on-surface-variant flex flex-col items-center justify-center gap-3">
-                  <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                  Loading complete response metadata...
-                </div>
-              ) : selectedQuestion ? (
-                <div className="bg-surface-container border border-border-subtle rounded-2xl p-6 shadow-sm space-y-6">
-                  
-                  <div className="flex flex-wrap justify-between items-center gap-2 border-b border-border-subtle/50 pb-4">
-                    <div className="space-y-1">
-                      <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-widest rounded border border-primary/20">
-                        {selectedQuestion.skill ? `${selectedQuestion.category} / ${selectedQuestion.skill}` : selectedQuestion.category}
+              </div>
+            ) : (
+              questions.map((q) => {
+                const isCurrent = selectedQuestion?.id === q.id;
+                return (
+                  <button
+                    type="button"
+                    key={q.id}
+                    onClick={() => loadQuestionDetails(q.id)}
+                    className={`lift group flex w-full cursor-pointer flex-col gap-2 rounded-xl border p-4 text-left ${
+                      isCurrent ? 'border-primary bg-surface-container-high shadow-sm' : 'border-border-subtle bg-surface-container hover:border-outline'
+                    }`}
+                  >
+                    <span className={`text-sm font-semibold leading-relaxed transition-colors ${isCurrent ? 'text-primary' : 'text-on-surface'}`}>
+                      {q.title}
+                    </span>
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="max-w-[70%] truncate rounded border border-border-subtle bg-surface-container-low px-1.5 py-0.5 text-[11px] text-on-surface-variant">
+                        {q.skill ? `${q.category} / ${q.skill}` : q.category}
                       </span>
-                      <p className="text-[11px] text-on-surface-variant">Complexity Index: <span className="text-on-surface font-semibold">{selectedQuestion.difficulty}</span></p>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={handleBookmark}
-                        disabled={bookmarking || bookmarked}
-                        title="Save to Vault"
-                        className={`p-1.5 border rounded-lg transition-colors ${
-                          bookmarked
-                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                            : 'bg-surface-container-low border-border-subtle text-on-surface-variant hover:text-on-surface'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-sm block">{bookmarked ? 'bookmark_added' : 'bookmark'}</span>
-                      </button>
-                      <Link
-                        to={`/mentor?teach=${encodeURIComponent(selectedQuestion?.title || '')}`}
-                        title="Ask AI to teach this"
-                        className="p-1.5 bg-surface-container-low border border-border-subtle rounded-lg text-on-surface-variant hover:text-primary hover:border-primary/30 transition-colors"
-                      >
-                        <span className="material-symbols-outlined text-sm block">school</span>
-                      </Link>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-bold tracking-widest text-primary uppercase block">Question Prompt</span>
-                    <h3 className="text-base font-bold text-on-surface leading-snug">
-                      {selectedQuestion.title}
-                    </h3>
-                  </div>
-
-                  <div className="pt-2 border-t border-border-subtle/40 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold tracking-widest text-emerald-400 uppercase block">Expert Explanation Model</span>
-                      {!revealedAnswer && (
-                        <button
-                          onClick={() => setRevealedAnswer(true)}
-                          className="px-3 py-1 bg-emerald-500 text-white text-[10px] font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-1 shadow-sm"
-                        >
-                          <span className="material-symbols-outlined text-xs">visibility</span> Reveal Target Solution
-                        </button>
-                      )}
-                    </div>
-
-                    {revealedAnswer ? (
-                      <div className="bg-surface-container-low border border-border-subtle p-4 rounded-xl space-y-3 shadow-inner animate-fadeIn">
-                        <p className="text-xs text-on-surface-variant leading-relaxed whitespace-pre-line">
-                          {selectedQuestion.body || 'No explanation summary available for this catalog record.'}
-                        </p>
-                      </div>
-                    ) : (
-                      <div 
-                        onClick={() => setRevealedAnswer(true)}
-                        className="bg-surface-container-low/60 border border-dashed border-border-subtle p-8 rounded-xl text-center cursor-pointer hover:bg-surface-container-low/90 hover:border-primary/50 transition-all group"
-                      >
-                        <span className="material-symbols-outlined text-2xl text-on-surface-variant/40 group-hover:text-primary transition-colors block mb-1">lock</span>
-                        <p className="text-xs font-medium text-on-surface-variant group-hover:text-on-surface transition-colors">Click to verify solution pattern vector</p>
-                        <p className="text-[10px] text-on-surface-variant/60 mt-0.5">Understand core conceptual principles and implementation targets.</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {revealedAnswer && (
-                    <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-subtle/40">
-                      <button
-                        onClick={() => setRevealedAnswer(false)}
-                        className="px-3 py-1.5 text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all"
-                      >
-                        Collapse Solution
-                      </button>
-                      <button
-                        onClick={handleMarkReviewedAndNext}
-                        disabled={markingReviewed}
-                        className="px-4 py-1.5 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white text-[11px] font-bold rounded-xl transition-all flex items-center gap-1 disabled:opacity-50"
-                      >
-                        {markingReviewed ? 'Savingâ€¦' : 'Mark Reviewed & Next'}
-                        <span className="material-symbols-outlined text-xs">done_all</span>
-                      </button>
-                    </div>
-                  )}
-
-                </div>
-              ) : (
-                <div className="bg-surface-container border border-border-subtle border-dashed rounded-2xl p-16 text-center text-xs text-on-surface-variant italic">
-                  Select a targeted parameter track node on the left index panel to open code prompt maps.
-                </div>
-              )}
-            </div>
-
+                      <span className={`text-xs font-semibold ${difficultyTone(q.difficulty)}`}>{q.difficulty}</span>
+                    </span>
+                  </button>
+                );
+              })
+            )}
+            {hasMore && !loadingList && (
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="min-h-10 w-full rounded-xl border border-primary/20 text-sm font-semibold text-primary transition-all hover:bg-primary/10 disabled:opacity-50"
+              >
+                {loadingMore ? 'Loading…' : 'Load more questions'}
+              </button>
+            )}
           </div>
 
-        </main>
+          {/* Answer panel: beside the list on wide screens */}
+          <div className="hidden lg:col-span-7 lg:block">
+            {detail ?? (
+              <div className="rounded-2xl border border-dashed border-border-subtle bg-surface-container p-16 text-center text-sm text-on-surface-variant">
+                Pick a question from the list to practise it.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* Phones: the answer panel slides in over the list */}
+      {panel.mounted && selectedQuestion && (
+        <div
+          className={`fixed inset-0 z-[75] flex flex-col bg-background-deep lg:hidden ${panel.closing ? 'panel-out pointer-events-none' : 'panel-in'}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Question"
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-2">
+            <button
+              type="button"
+              onClick={() => setDetailOpen(false)}
+              className="inline-flex min-h-10 items-center gap-1 rounded-lg px-2 text-sm font-medium text-on-surface transition-colors hover:bg-paper/5"
+            >
+              <span className="material-symbols-outlined text-[20px]" aria-hidden="true">arrow_back</span>
+              Questions
+            </button>
+            <span className="pr-2 text-xs tabular-nums text-on-surface-variant">
+              {position} of {questions.length}
+            </span>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">{detail}</div>
+        </div>
+      )}
+
+      <FilterSheet
+        open={filtersOpen}
+        onClose={closeFilters}
+        onApply={applyFilters}
+        onClear={() => setDraft({ role: '', category: '', skill: '', difficulty: '' })}
+      >
+        <fieldset>
+          <legend className="mb-2 text-sm font-medium text-line">Role</legend>
+          <div className="grid grid-cols-2 gap-2">
+            {visibleRoles.map((roleName) => {
+              const on = draft.role === roleName;
+              const meta = ROLE_METADATA[roleName] || { icon: 'shield_person' };
+              return (
+                <button
+                  type="button"
+                  key={roleName}
+                  aria-pressed={on}
+                  onClick={() => setDraftRole(on ? '' : roleName)}
+                  className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 text-left text-sm font-medium transition-colors ${
+                    on ? 'border-highlight bg-highlight text-ink' : 'border-border-subtle text-paper hover:border-outline'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{meta.icon}</span>
+                  <span className="min-w-0 py-1.5 leading-tight">{roleName}</span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <FilterSelect
+          label={draft.role ? `Category for ${draft.role}` : 'Category'}
+          value={draft.category}
+          onChange={(v) => setDraft((d) => ({ ...d, category: v, skill: '' }))}
+        >
+          <option value="">All categories</option>
+          {draftCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </FilterSelect>
+
+        <FilterSelect
+          label="Skill"
+          value={draft.skill}
+          onChange={(v) => setDraft((d) => ({ ...d, skill: v }))}
+          disabled={!draft.category || draftSkills.length === 0}
+        >
+          {!draft.category ? (
+            <option value="">Choose a category first</option>
+          ) : draftSkills.length === 0 ? (
+            <option value="">No skills for this category</option>
+          ) : (
+            <>
+              <option value="">All skills</option>
+              {draftSkills.map((sk) => <option key={sk} value={sk}>{sk}</option>)}
+            </>
+          )}
+        </FilterSelect>
+
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium text-line">Difficulty</legend>
+          <div className="grid grid-cols-4 gap-2">
+            {[['', 'Any'], ...qaData.difficulties.map((d) => [d, d])].map(([v, l]) => (
+              <button
+                key={l}
+                type="button"
+                aria-pressed={draft.difficulty === v}
+                onClick={() => setDraft((d) => ({ ...d, difficulty: v }))}
+                className={`min-h-11 cursor-pointer rounded-lg border text-sm font-semibold transition-colors ${
+                  draft.difficulty === v ? 'border-highlight bg-highlight text-ink' : 'border-border-subtle text-paper hover:border-outline'
+                }`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      </FilterSheet>
     </div>
   );
 }

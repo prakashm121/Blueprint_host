@@ -13,6 +13,7 @@ import Mentor from './pages/Mentor/Mentor';
 import CheckEmail from './pages/Auth/CheckEmail';
 import NotFound from './pages/Misc/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
+import LoadingScreen from './components/LoadingScreen';
 import DSAEngine from './pages/InterviewHub/DSAEngine';
 import DSAProblemDetail from './pages/InterviewHub/DSAProblemDetail';
 import InterviewQAEngine from './pages/InterviewHub/InterviewQAEngine';
@@ -28,9 +29,7 @@ function LandingRoute() {
 
   if (isAuthLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-pulse text-slate-400">Initializing...</div>
-      </div>
+      <LoadingScreen label="Checking your session…" />
     );
   }
 

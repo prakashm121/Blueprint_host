@@ -38,21 +38,21 @@ const CALIBRATION_HINTS = {
 };
 
 const CATEGORY_META = {
-  'Core Subjects':       { icon: Brain,    colour: 'text-sky-400',     bg: 'bg-sky-500/10',     border: 'border-sky-500/20' },
+  'Core Subjects':       { icon: Brain,    colour: 'text-highlight',     bg: 'bg-highlight/10',     border: 'border-highlight/20' },
   'DSA':                 { icon: Code2,    colour: 'text-violet-400',   bg: 'bg-violet-500/10',  border: 'border-violet-500/20' },
   'Backend':             { icon: Sparkles, colour: 'text-amber-400',    bg: 'bg-amber-500/10',   border: 'border-amber-500/20' },
   'Frontend':            { icon: Sparkles, colour: 'text-pink-400',     bg: 'bg-pink-500/10',    border: 'border-pink-500/20' },
   'Database':            { icon: Sparkles, colour: 'text-emerald-400',  bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
   'System Design':       { icon: Sparkles, colour: 'text-orange-400',   bg: 'bg-orange-500/10',  border: 'border-orange-500/20' },
-  'DevOps':              { icon: Sparkles, colour: 'text-cyan-400',     bg: 'bg-cyan-500/10',    border: 'border-cyan-500/20' },
+  'DevOps':              { icon: Sparkles, colour: 'text-highlight',     bg: 'bg-highlight/10',    border: 'border-highlight/20' },
   'Testing & QA':        { icon: Sparkles, colour: 'text-rose-400',     bg: 'bg-rose-500/10',    border: 'border-rose-500/20' },
   'UI/UX & Design':      { icon: Sparkles, colour: 'text-fuchsia-400',  bg: 'bg-fuchsia-500/10', border: 'border-fuchsia-500/20' },
   'AI & ML':             { icon: Sparkles, colour: 'text-indigo-400',   bg: 'bg-indigo-500/10',  border: 'border-indigo-500/20' },
-  'Data Analytics & BI': { icon: Sparkles, colour: 'text-blue-400',     bg: 'bg-blue-500/10',    border: 'border-blue-500/20' },
+  'Data Analytics & BI': { icon: Sparkles, colour: 'text-secondary',     bg: 'bg-secondary/10',    border: 'border-secondary/20' },
   'Security & Networking':{ icon: Sparkles, colour: 'text-red-400',      bg: 'bg-red-500/10',     border: 'border-red-500/20' },
   'Programming Languages':{ icon: Sparkles, colour: 'text-lime-400',     bg: 'bg-lime-500/10',    border: 'border-lime-500/20' },
   'Behavioral':          { icon: Sparkles, colour: 'text-teal-400',     bg: 'bg-teal-500/10',    border: 'border-teal-500/20' },
-  'default':             { icon: Sparkles, colour: 'text-zinc-400',     bg: 'bg-zinc-500/10',    border: 'border-zinc-500/20' },
+  'default':             { icon: Sparkles, colour: 'text-line',     bg: 'bg-outline/10',    border: 'border-outline/20' },
 };
 
 function confidenceColour(v) {
@@ -73,7 +73,7 @@ function SkillSlider({ item, value, onChange }) {
       {/* Progress bar */}
       <div className="w-full h-1.5 rounded-full bg-surface-container-high mb-3 overflow-hidden">
         <div
-          className={`${bar} h-full rounded-full transition-all duration-300`}
+          className={`bar-grow ${bar} h-full rounded-full transition-all duration-300`}
           style={{ width: `${value}%` }}
         />
       </div>
@@ -84,7 +84,7 @@ function SkillSlider({ item, value, onChange }) {
         step="5"
         value={value}
         onChange={(e) => onChange(item.skill_key, Number(e.target.value))}
-        className="w-full accent-sky-500 cursor-pointer"
+        className="h-8 w-full accent-highlight cursor-pointer"
       />
       {hint && (
         <p className="mt-2 text-[11px] text-on-surface-variant leading-relaxed italic">{hint}</p>
@@ -172,7 +172,7 @@ export default function Subjects() {
           <div>
             <button
               onClick={() => navigate('/dashboard')}
-              className="mb-3 flex items-center gap-1.5 text-xs text-on-surface-variant hover:text-on-surface transition"
+              className="-ml-2 mb-2 flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-xs text-on-surface-variant hover:text-on-surface transition"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to Dashboard
@@ -195,7 +195,7 @@ export default function Subjects() {
         {/* Loading */}
         {isLoading && (
           <div className="flex items-center justify-center py-20">
-            <div className="h-8 w-8 rounded-full border-2 border-sky-500 border-t-transparent animate-spin" />
+            <div className="h-8 w-8 rounded-full border-2 border-highlight border-t-transparent animate-spin" />
           </div>
         )}
 
@@ -207,7 +207,7 @@ export default function Subjects() {
             <p className="mt-1 text-xs text-on-surface-variant">Complete onboarding to set your initial confidence scores.</p>
             <button
               onClick={() => navigate('/onboarding')}
-              className="mt-4 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition"
+              className="mt-4 rounded-xl bg-highlight px-4 py-2 text-sm font-semibold text-ink hover:bg-primary-fixed transition"
             >
               Start Onboarding
             </button>
@@ -224,7 +224,7 @@ export default function Subjects() {
               <button
                 onClick={handleSave}
                 disabled={mutation.isPending}
-                className="flex items-center gap-2 rounded-2xl bg-sky-500 px-8 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-sky-500/20 transition hover:bg-sky-400 disabled:opacity-60"
+                className="flex items-center gap-2 rounded-2xl bg-highlight px-8 py-3 text-sm font-semibold text-ink shadow-lg shadow-highlight/20 transition hover:bg-primary-fixed disabled:opacity-60"
               >
                 {saved ? (
                   <>
@@ -233,7 +233,7 @@ export default function Subjects() {
                   </>
                 ) : mutation.isPending ? (
                   <>
-                    <div className="h-4 w-4 rounded-full border-2 border-slate-950/40 border-t-transparent animate-spin" />
+                    <div className="h-4 w-4 rounded-full border-2 border-background-deep/40 border-t-transparent animate-spin" />
                     Saving…
                   </>
                 ) : (

@@ -3,18 +3,20 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api';
 import { Check, Inbox } from 'lucide-react';
+import { usePresence } from '../../lib/motion';
 
 const TYPE_STYLES = {
-  system:      { bg: 'rgba(59,130,246,0.12)',  text: '#60a5fa', border: 'rgba(59,130,246,0.2)' },
-  planner:     { bg: 'rgba(168,85,247,0.12)',  text: '#c084fc', border: 'rgba(168,85,247,0.2)' },
-  mentor:      { bg: 'rgba(251,146,60,0.12)',  text: '#fb923c', border: 'rgba(251,146,60,0.2)' },
-  achievement: { bg: 'rgba(34,197,94,0.12)',   text: '#4ade80', border: 'rgba(34,197,94,0.2)'  },
-  default:     { bg: 'rgba(148,163,184,0.12)', text: '#94a3b8', border: 'rgba(148,163,184,0.2)'},
+  system:      { bg: 'color-mix(in srgb, var(--tone-blue) 12%, transparent)', text: 'var(--tone-blue)', border: 'color-mix(in srgb, var(--tone-blue) 20%, transparent)' },
+  planner:     { bg: 'color-mix(in srgb, var(--tone-violet) 12%, transparent)', text: 'var(--tone-violet)', border: 'color-mix(in srgb, var(--tone-violet) 20%, transparent)' },
+  mentor:      { bg: 'color-mix(in srgb, var(--tone-orange) 12%, transparent)', text: 'var(--tone-orange)', border: 'color-mix(in srgb, var(--tone-orange) 20%, transparent)' },
+  achievement: { bg: 'color-mix(in srgb, var(--tone-green) 12%, transparent)', text: 'var(--tone-green)', border: 'color-mix(in srgb, var(--tone-green) 20%, transparent)' },
+  default:     { bg: 'color-mix(in srgb, var(--tone-slate) 12%, transparent)', text: 'var(--tone-slate)', border: 'color-mix(in srgb, var(--tone-slate) 20%, transparent)' },
 };
 
 export default function Notifications({ isOpen, onClose }) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState('all');
+  const { mounted, closing } = usePresence(isOpen, 200);
 
   const { data: notifications = [], isLoading } = useQuery({
     queryKey: ['notifications'],
@@ -46,18 +48,17 @@ export default function Notifications({ isOpen, onClose }) {
     ? notifications.filter((n) => !n.read_at)
     : notifications;
 
-  if (!isOpen) return null;
+  if (!mounted) return null;
 
   return (
-    /* Backdrop */
-    <div
-      className="fixed inset-0 z-[60] flex justify-end bg-black/40 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      {/* Drawer panel */}
+    <div className="fixed inset-0 z-[60] flex justify-end" role="dialog" aria-modal="true" aria-label="Notifications">
+      {/* Backdrop */}
+      <div className={`absolute inset-0 bg-black/40 backdrop-blur-sm ${closing ? 'backdrop-out' : 'backdrop-in'}`} onClick={onClose} />
+      {/* Drawer panel: slides in from the right, and back out */}
       <div
-        className="w-full max-w-md h-full bg-surface-card border-l border-border-subtle shadow-2xl flex flex-col text-on-surface"
-        onClick={(e) => e.stopPropagation()}
+        className={`relative w-full max-w-md h-full bg-surface-card border-l border-border-subtle shadow-2xl flex flex-col text-on-surface ${
+          closing ? 'panel-out pointer-events-none' : 'panel-in'
+        }`}
       >
 
         {/* ── Header (fixed, never scrolls) ── */}
@@ -70,6 +71,7 @@ export default function Notifications({ isOpen, onClose }) {
             </div>
             <button
               onClick={onClose}
+              aria-label="Close notifications"
               className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0"
             >
               <span className="material-symbols-outlined text-[20px]">close</span>
@@ -86,7 +88,7 @@ export default function Notifications({ isOpen, onClose }) {
                   <button
                     key={f}
                     onClick={() => setFilter(f)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    className={`flex min-h-10 sm:min-h-0 items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                       isActive
                         ? 'bg-primary/10 text-primary border border-primary/20'
                         : 'text-on-surface-variant hover:text-on-surface'
@@ -104,7 +106,7 @@ export default function Notifications({ isOpen, onClose }) {
             {unreadCount > 0 && (
               <button
                 onClick={() => markAllRead.mutate()}
-                className="text-xs font-semibold text-primary hover:text-primary/80 transition shrink-0"
+                className="min-h-10 rounded-lg px-2 text-xs font-semibold text-primary hover:text-primary/80 transition shrink-0"
               >
                 Mark all read
               </button>
@@ -113,7 +115,7 @@ export default function Notifications({ isOpen, onClose }) {
         </div>
 
         {/* ── Scrollable notification list ── */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        <div key={filter} className="stagger-list flex-1 overflow-y-auto px-4 py-4 space-y-3">
 
           {isLoading && (
             <div className="py-16 flex flex-col items-center gap-2">
@@ -141,7 +143,7 @@ export default function Notifications({ isOpen, onClose }) {
                 className={`group relative rounded-xl border p-4 transition-all duration-150 ${
                   isUnread
                     ? 'bg-surface-container border-border-subtle hover:border-primary/30'
-                    : 'bg-surface-container/30 border-border-subtle/40 opacity-60'
+                    : 'bg-surface-container/30 border-border-subtle/40 opacity-60 transition-opacity duration-500'
                 }`}
               >
                 {/* Unread indicator dot */}
@@ -167,7 +169,7 @@ export default function Notifications({ isOpen, onClose }) {
                     {isUnread && (
                       <button
                         onClick={() => markRead.mutate(n.id)}
-                        className="shrink-0 opacity-0 group-hover:opacity-100 inline-flex h-6 w-6 items-center justify-center rounded-md border border-border-subtle bg-surface-card text-on-surface-variant hover:border-primary hover:text-primary transition cursor-pointer"
+                        className="shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 inline-flex h-6 w-6 pointer-coarse:h-10 pointer-coarse:w-10 items-center justify-center rounded-md border border-border-subtle bg-surface-card text-on-surface-variant hover:border-primary hover:text-primary transition cursor-pointer"
                         title="Mark as read"
                       >
                         <Check className="h-3 w-3" />
@@ -186,7 +188,7 @@ export default function Notifications({ isOpen, onClose }) {
                       <Link
                         to={n.action_url}
                         onClick={onClose}
-                        className="text-[11px] font-semibold text-primary hover:text-primary/80 transition"
+                        className="-ml-1 inline-flex min-h-9 items-center rounded-md px-1 text-[11px] font-semibold text-primary hover:text-primary/80 transition"
                       >
                         View details →
                       </Link>

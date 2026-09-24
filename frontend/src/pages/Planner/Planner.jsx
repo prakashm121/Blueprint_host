@@ -8,14 +8,15 @@ import {
   ArrowLeft, Sparkles, Target, Tag
 } from 'lucide-react';
 
+// Tones are theme tokens (index.css), so the chips stay readable in both themes.
 const CATEGORY_COLORS = {
-  DSA: { bg: 'rgba(168,85,247,0.12)', text: '#c084fc', border: 'rgba(168,85,247,0.25)' },
-  Subjects: { bg: 'rgba(59,130,246,0.12)', text: '#93c5fd', border: 'rgba(59,130,246,0.25)' },
-  Resume: { bg: 'rgba(34,197,94,0.12)', text: '#86efac', border: 'rgba(34,197,94,0.25)' },
-  Projects: { bg: 'rgba(251,146,60,0.12)', text: '#fdba74', border: 'rgba(251,146,60,0.25)' },
-  'Company Preparation': { bg: 'rgba(244,63,94,0.12)', text: '#fda4af', border: 'rgba(244,63,94,0.25)' },
-  'Mock Interview': { bg: 'rgba(14,165,233,0.12)', text: '#7dd3fc', border: 'rgba(14,165,233,0.25)' },
-  Custom: { bg: 'rgba(148,163,184,0.12)', text: '#cbd5e1', border: 'rgba(148,163,184,0.25)' },
+  DSA: { bg: 'color-mix(in srgb, var(--tone-violet) 12%, transparent)', text: 'var(--tone-violet)', border: 'color-mix(in srgb, var(--tone-violet) 25%, transparent)' },
+  Subjects: { bg: 'color-mix(in srgb, var(--tone-blue) 12%, transparent)', text: 'var(--tone-blue)', border: 'color-mix(in srgb, var(--tone-blue) 25%, transparent)' },
+  Resume: { bg: 'color-mix(in srgb, var(--tone-green) 12%, transparent)', text: 'var(--tone-green)', border: 'color-mix(in srgb, var(--tone-green) 25%, transparent)' },
+  Projects: { bg: 'color-mix(in srgb, var(--tone-orange) 12%, transparent)', text: 'var(--tone-orange)', border: 'color-mix(in srgb, var(--tone-orange) 25%, transparent)' },
+  'Company Preparation': { bg: 'color-mix(in srgb, var(--tone-rose) 12%, transparent)', text: 'var(--tone-rose)', border: 'color-mix(in srgb, var(--tone-rose) 25%, transparent)' },
+  'Mock Interview': { bg: 'color-mix(in srgb, var(--tone-sky) 12%, transparent)', text: 'var(--tone-sky)', border: 'color-mix(in srgb, var(--tone-sky) 25%, transparent)' },
+  Custom: { bg: 'color-mix(in srgb, var(--tone-slate) 12%, transparent)', text: 'var(--tone-slate)', border: 'color-mix(in srgb, var(--tone-slate) 25%, transparent)' },
 };
 
 const PRIORITY_ICONS = {
@@ -32,6 +33,8 @@ export default function Planner() {
   const [creating, setCreating] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const [activeDayFilter, setActiveDayFilter] = useState("All");
+  // The task just ticked, so only that one plays the completion animation.
+  const [justToggled, setJustToggled] = useState(null);
 
   const [newTask, setNewTask] = useState({
     title: '',
@@ -112,6 +115,7 @@ export default function Planner() {
   });
 
   const toggleTask = (task) => {
+    setJustToggled(task.id);
     const newStatus = (task.status || '').toLowerCase() === 'completed' ? 'Pending' : 'Completed';
     toggleMutation.mutate({ taskId: task.id, newStatus });
   };
@@ -187,8 +191,8 @@ export default function Planner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-pulse text-slate-400 text-lg">Running structural date operations...</div>
+      <div className="min-h-screen bg-background-deep flex items-center justify-center">
+        <div className="animate-pulse text-line text-lg">Running structural date operations...</div>
       </div>
     );
   }
@@ -202,25 +206,26 @@ export default function Planner() {
 
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-12 selection:bg-sky-500/30 w-full max-w-[100vw] overflow-x-hidden">
+    <div className="min-h-screen bg-background-deep text-paper font-sans pb-12 selection:bg-highlight/30 w-full max-w-[100vw] overflow-x-hidden">
 
       {/* Top Header Bar */}
-      <div className="w-full border-b border-slate-900 px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-950/80 backdrop-blur sticky top-0 z-50">
-        <div className="flex items-center gap-4">
+      <div className="w-full border-b border-border-subtle px-4 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-3 sm:gap-4 bg-background-deep/80 backdrop-blur sticky top-0 z-50">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <Link
             to="/dashboard"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/80 text-slate-400 transition hover:border-slate-600 hover:text-white"
+            aria-label="Back to dashboard"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border-subtle bg-surface-card/80 text-line transition hover:border-outline hover:text-paper"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <h1 className="text-lg font-bold text-white tracking-tight">Weekly Planner</h1>
+            <h1 className="text-lg font-bold text-paper tracking-tight">Weekly Planner</h1>
             {plan ? (
-              <p className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">
+              <p className="text-[11px] text-line uppercase tracking-wider font-semibold">
                 Week &bull; {plan.start_date} — {plan.end_date}
               </p>
             ) : (
-              <p className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">
+              <p className="text-[11px] text-line uppercase tracking-wider font-semibold">
                 {targetRole} Track
               </p>
             )}
@@ -241,7 +246,7 @@ export default function Planner() {
           {plan && totalCount > 0 && (
             <button
               onClick={() => setShowAddTask(!showAddTask)}
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 shadow-lg shadow-sky-500/20 transition hover:bg-sky-400 cursor-pointer"
+              className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-highlight px-4 py-2 text-xs font-semibold text-ink shadow-lg shadow-highlight/20 transition hover:bg-primary-fixed cursor-pointer"
             >
               <Plus className="h-4 w-4" /> Add Task
             </button>
@@ -249,26 +254,26 @@ export default function Planner() {
         </div>
       </div>
 
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-8 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
 
         {(!plan || totalCount === 0) && (
           <div className="flex flex-col items-center justify-center pt-20 pb-10">
-            <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-10 max-w-md text-center shadow-xl backdrop-blur-sm">
-              <div className="mx-auto w-16 h-16 bg-sky-500/10 rounded-2xl flex items-center justify-center mb-6">
-                <Sparkles className="w-8 h-8 text-sky-400" />
+            <div className="bg-surface-card/40 border border-border-subtle rounded-3xl p-10 max-w-md text-center shadow-xl backdrop-blur-sm">
+              <div className="mx-auto w-16 h-16 bg-highlight/10 rounded-2xl flex items-center justify-center mb-6">
+                <Sparkles className="w-8 h-8 text-highlight" />
               </div>
-              <h2 className="text-xl font-bold text-white mb-3">Plan Your Week</h2>
-              <p className="text-sm text-slate-400 mb-8 leading-relaxed">
-                Generate a personalized weekly plan consisting of 7 tailored tasks designed to advance you toward your target role as a <strong className="text-slate-300">{targetRole}</strong>.
+              <h2 className="text-xl font-bold text-paper mb-3">Plan Your Week</h2>
+              <p className="text-sm text-line mb-8 leading-relaxed">
+                Generate a personalized weekly plan consisting of 7 tailored tasks designed to advance you toward your target role as a <strong className="text-on-surface">{targetRole}</strong>.
               </p>
               <button
                 onClick={generatePlan}
                 disabled={creating}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-sky-500 px-5 py-3.5 text-sm font-bold text-slate-950 shadow-lg shadow-sky-500/20 transition hover:bg-sky-400 cursor-pointer disabled:opacity-50"
+                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-highlight px-5 py-3.5 text-sm font-bold text-ink shadow-lg shadow-highlight/20 transition hover:bg-primary-fixed cursor-pointer disabled:opacity-50"
               >
                 {creating ? (
                   <>
-                    <div className="h-4 w-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                    <div className="h-4 w-4 border-2 border-background-deep border-t-transparent rounded-full animate-spin"></div>
                     Generating AI Plan...
                   </>
                 ) : (
@@ -286,13 +291,13 @@ export default function Planner() {
       {/* Roadmap Milestone Context Panel */}
       {nextMilestone && (
         <div className="max-w-7xl mx-auto px-6 mt-4">
-          <Link to="/roadmap" className="flex items-center gap-3 p-3 rounded-xl border border-slate-800 bg-slate-900/50 hover:bg-slate-800/50 hover:border-slate-700 transition">
-            <Target className="h-5 w-5 text-sky-400 shrink-0" />
+          <Link to="/roadmap" className="flex items-center gap-3 p-3 rounded-xl border border-border-subtle bg-surface-card/50 hover:bg-surface-container/50 hover:border-border-subtle transition">
+            <Target className="h-5 w-5 text-highlight shrink-0" />
             <div>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Working toward roadmap milestone</p>
-              <p className="text-sm font-semibold text-white">{nextMilestone.title} <span className="text-slate-500 font-normal">({nextMilestone.category})</span></p>
+              <p className="text-[10px] text-line font-bold uppercase tracking-wider mb-0.5">Working toward roadmap milestone</p>
+              <p className="text-sm font-semibold text-paper">{nextMilestone.title} <span className="text-line font-normal">({nextMilestone.category})</span></p>
             </div>
-            <ArrowLeft className="h-4 w-4 text-slate-600 rotate-180 ml-auto" />
+            <ArrowLeft className="h-4 w-4 text-outline rotate-180 ml-auto" />
           </Link>
         </div>
       )}
@@ -305,14 +310,14 @@ export default function Planner() {
           <div className="lg:col-span-8 space-y-6">
 
             {/* Day Filter Tab Bar */}
-            <div className="flex gap-1.5 overflow-x-auto pb-2 border-b border-slate-900 no-scrollbar">
+            <div className="flex gap-1.5 overflow-x-auto pb-2 border-b border-border-subtle no-scrollbar">
               {DAYS_OF_WEEK.map((day) => (
                 <button
                   key={day}
                   onClick={() => setActiveDayFilter(day)}
-                  className={`py-1.5 px-3.5 rounded-xl text-xs font-semibold cursor-pointer shrink-0 transition-all ${activeDayFilter === day
-                    ? "bg-sky-500 text-slate-950 font-bold"
-                    : "text-slate-400 hover:text-white hover:bg-slate-900"
+                  className={`min-h-10 sm:min-h-0 py-1.5 px-3.5 rounded-xl text-xs font-semibold cursor-pointer shrink-0 transition-all ${activeDayFilter === day
+                    ? "bg-highlight text-ink font-bold"
+                    : "text-line hover:text-paper hover:bg-surface-card"
                     }`}
                 >
                   {day}
@@ -324,15 +329,15 @@ export default function Planner() {
             {showAddTask && (
               <form
                 onSubmit={addTask}
-                className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 shadow-lg backdrop-blur space-y-4"
+                className="rounded-2xl border border-border-subtle bg-surface-card/40 p-5 shadow-lg backdrop-blur space-y-4"
               >
-                <h3 className="text-sm font-bold text-white">Manual Metric Addition</h3>
+                <h3 className="text-sm font-bold text-paper">Manual Metric Addition</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
-                    <label className="text-xs font-semibold text-slate-400 block mb-1">Task Details</label>
+                    <label className="text-xs font-semibold text-line block mb-1">Task Details</label>
                     <input
                       type="text"
-                      className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-sky-500 transition"
+                      className="w-full rounded-xl border border-border-subtle bg-background-deep px-3 py-2.5 text-sm text-paper outline-none focus:border-highlight transition"
                       value={newTask.title}
                       onChange={e => setNewTask({ ...newTask, title: e.target.value })}
                       placeholder="e.g. Analyze memory layout architecture bounds"
@@ -340,9 +345,9 @@ export default function Planner() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-slate-400 block mb-1">Category Mapping</label>
+                    <label className="text-xs font-semibold text-line block mb-1">Category Mapping</label>
                     <select
-                      className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-slate-100 outline-none focus:border-sky-500 cursor-pointer"
+                      className="w-full rounded-xl border border-border-subtle bg-background-deep px-3 py-2.5 text-xs text-paper outline-none focus:border-highlight cursor-pointer"
                       value={newTask.category}
                       onChange={e => setNewTask({ ...newTask, category: e.target.value })}
                     >
@@ -350,9 +355,9 @@ export default function Planner() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-slate-400 block mb-1">Priority Metric</label>
+                    <label className="text-xs font-semibold text-line block mb-1">Priority Metric</label>
                     <select
-                      className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-slate-100 outline-none focus:border-sky-500 cursor-pointer"
+                      className="w-full rounded-xl border border-border-subtle bg-background-deep px-3 py-2.5 text-xs text-paper outline-none focus:border-highlight cursor-pointer"
                       value={newTask.priority}
                       onChange={e => setNewTask({ ...newTask, priority: e.target.value })}
                     >
@@ -363,10 +368,10 @@ export default function Planner() {
                     </select>
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="text-xs font-semibold text-slate-400 block mb-1">Allocated Minutes</label>
+                    <label className="text-xs font-semibold text-line block mb-1">Allocated Minutes</label>
                     <input
                       type="number"
-                      className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-slate-100 outline-none focus:border-sky-500 transition"
+                      className="w-full rounded-xl border border-border-subtle bg-background-deep px-3 py-2.5 text-xs text-paper outline-none focus:border-highlight transition"
                       value={newTask.estimated_minutes}
                       onChange={e => setNewTask({ ...newTask, estimated_minutes: parseInt(e.target.value) || 30 })}
                       min="5"
@@ -375,20 +380,20 @@ export default function Planner() {
                   </div>
                 </div>
                 <div className="flex gap-2 pt-2 justify-end">
-                  <button type="button" onClick={() => setShowAddTask(false)} className="rounded-xl border border-slate-800 px-4 py-2 text-xs font-semibold text-slate-400 transition hover:bg-slate-900">
+                  <button type="button" onClick={() => setShowAddTask(false)} className="rounded-xl border border-border-subtle px-4 py-2 text-xs font-semibold text-line transition hover:bg-surface-card">
                     Cancel
                   </button>
-                  <button type="submit" className="rounded-xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-sky-400">
+                  <button type="submit" className="rounded-xl bg-highlight px-4 py-2 text-xs font-semibold text-ink transition hover:bg-primary-fixed">
                     Commit Task
                   </button>
                 </div>
               </form>
             )}
 
-            {/* Feed Card Renderer */}
-            <div className="space-y-4">
+            {/* Feed Card Renderer (re-staggers when the day filter changes) */}
+            <div key={activeDayFilter} className="stagger-list space-y-4">
               {filteredTasks.length === 0 ? (
-                <div className="bg-slate-900/20 border border-dashed border-slate-800 rounded-2xl p-12 text-center text-slate-500 text-xs flex flex-col items-center justify-center">
+                <div className="bg-surface-card/20 border border-dashed border-border-subtle rounded-2xl p-12 text-center text-line text-xs flex flex-col items-center justify-center">
                   <LayoutList className="w-8 h-8 opacity-20 mb-2" />
                   No parameters listed under sequence filter "{activeDayFilter}".
                 </div>
@@ -399,34 +404,35 @@ export default function Planner() {
                   return (
                     <div
                       key={task.id}
-                      className={`group relative flex items-start gap-4 rounded-2xl border p-5 transition-all duration-200 ${isDone
-                        ? 'border-slate-900 bg-slate-900/20 opacity-50'
-                        : 'border-slate-800 bg-slate-900/50 hover:border-slate-700'
+                      className={`lift group relative flex items-start gap-4 rounded-2xl border p-5 ${isDone
+                        ? 'border-border-subtle bg-surface-card/20 opacity-50'
+                        : 'border-border-subtle bg-surface-card/50 hover:border-border-subtle'
                         }`}
                     >
                       <button
                         onClick={() => toggleTask(task)}
-                        className={`mt-0.5 shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-md border transition cursor-pointer ${isDone
-                          ? 'border-sky-500 bg-sky-500 text-slate-950'
-                          : 'border-slate-600 hover:border-sky-400'
-                          }`}
+                        aria-label={isDone ? `Mark "${task.title}" as not done` : `Mark "${task.title}" as done`}
+                        className={`relative mt-0.5 shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-md border transition cursor-pointer before:absolute before:-inset-3 before:content-[''] ${isDone
+                          ? 'border-highlight bg-highlight text-ink'
+                          : 'border-outline hover:border-primary-fixed'
+                          } ${isDone && justToggled === task.id ? 'success-ring' : ''}`}
                       >
-                        {isDone && <Check className="h-3.5 w-3.5 stroke-3" />}
+                        {isDone && <Check className={`h-3.5 w-3.5 stroke-3 ${justToggled === task.id ? 'pop-check' : ''}`} />}
                       </button>
 
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div>
-                            <span className="text-[9px] bg-slate-950 border border-slate-800 text-sky-400 font-extrabold tracking-wider px-2 py-0.5 rounded uppercase">
+                            <span className="text-[9px] bg-background-deep border border-border-subtle text-highlight font-extrabold tracking-wider px-2 py-0.5 rounded uppercase">
                               {task.displayDay}
                             </span>
-                            <h4 className={`text-sm font-bold mt-1.5 transition-all ${isDone ? 'line-through text-slate-500' : 'text-white'}`}>
+                            <h4 className={`text-sm font-bold mt-1.5 transition-all ${isDone ? 'line-through text-line' : 'text-paper'}`}>
                               {task.title}
                             </h4>
                           </div>
 
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] bg-slate-950 border border-slate-800 text-slate-400 font-bold px-1.5 py-0.5 rounded uppercase tracking-wide">
+                          <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
+                            <span className="text-[9px] bg-background-deep border border-border-subtle text-line font-bold px-1.5 py-0.5 rounded uppercase tracking-wide">
                               {PRIORITY_ICONS[task.priority] || '⚪'} {task.priority}
                             </span>
                             <span
@@ -438,7 +444,7 @@ export default function Planner() {
                           </div>
                         </div>
 
-                        <div className="mt-2.5 flex items-center gap-4 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                        <div className="mt-2.5 flex items-center gap-4 text-[10px] text-line font-bold uppercase tracking-wider">
                           <span className="flex items-center gap-1">
                             <Clock className="w-3.5 h-3.5" />
                             {task.estimated_minutes || 30} mins
@@ -452,7 +458,7 @@ export default function Planner() {
 
                       <button
                         onClick={() => deleteTask(task.id)}
-                        className="shrink-0 opacity-0 group-hover:opacity-100 inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-500/10 hover:text-red-400 cursor-pointer"
+                        className="shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 inline-flex h-7 w-7 pointer-coarse:h-10 pointer-coarse:w-10 items-center justify-center rounded-lg text-line transition hover:bg-red-500/10 hover:text-red-400 cursor-pointer"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -466,64 +472,65 @@ export default function Planner() {
 
           {/* Right Metric Grid Section */}
           <div className="lg:col-span-4 space-y-6">
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 flex flex-col items-center shadow-md">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 w-full border-b border-slate-800 pb-3 flex items-center gap-2">
-                <Target className="w-4 h-4 text-sky-400" />
+            <div className="bg-surface-card/40 border border-border-subtle rounded-2xl p-6 flex flex-col items-center shadow-md">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-line w-full border-b border-border-subtle pb-3 flex items-center gap-2">
+                <Target className="w-4 h-4 text-highlight" />
                 Weekly Progress Gauge
               </h3>
 
               <div className="relative flex items-center justify-center my-6">
                 <svg className="w-24 h-24 transform -rotate-90">
-                  <circle cx="48" cy="48" r="38" stroke="rgba(51, 65, 85, 0.15)" strokeWidth="5" fill="transparent" />
+                  <circle cx="48" cy="48" r="38" stroke="color-mix(in srgb, var(--color-paper) 12%, transparent)" strokeWidth="5" fill="transparent" />
                   <circle
                     cx="48"
                     cy="48"
                     r="38"
-                    stroke="#0ea5e9"
+                    stroke="var(--color-highlight)"
                     strokeWidth="5"
                     strokeDasharray={`${2 * Math.PI * 38}`}
                     strokeDashoffset={`${(2 * Math.PI * 38) * (1 - progressPct / 100)}`}
                     strokeLinecap="round"
                     fill="transparent"
                     className="transition-all duration-700 ease-out"
+                    style={{ '--ring-full': `${2 * Math.PI * 38}`, animation: 'ring-in var(--dur-4) var(--ease-draft) backwards' }}
                   />
                 </svg>
                 <div className="absolute text-center">
-                  <span className="text-xl font-extrabold text-white">{progressPct}%</span>
-                  <span className="block text-[8px] text-slate-500 font-bold uppercase">MET</span>
+                  <span className="text-xl font-extrabold text-paper">{progressPct}%</span>
+                  <span className="block text-[8px] text-line font-bold uppercase">MET</span>
                 </div>
               </div>
 
-              <p className="text-xs font-semibold text-white text-center">
+              <p className="text-xs font-semibold text-paper text-center">
                 {completedCount} of {totalCount} Tasks Checked
               </p>
             </div>
 
             {/* Category distributions progress bars */}
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 space-y-4">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                <Tag className="w-3.5 h-3.5 text-sky-400" />
+            <div className="bg-surface-card/40 border border-border-subtle rounded-2xl p-6 space-y-4">
+              <h4 className="text-xs font-bold text-line uppercase tracking-wider flex items-center gap-2">
+                <Tag className="w-3.5 h-3.5 text-highlight" />
                 Category Analytics
               </h4>
 
               <div className="space-y-3.5">
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-slate-300">Data Structures & Algos</span>
-                    <span className="text-sky-400">{getCategoryProgress("DSA")}%</span>
+                    <span className="text-on-surface">Data Structures & Algos</span>
+                    <span className="text-highlight">{getCategoryProgress("DSA")}%</span>
                   </div>
-                  <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-900">
-                    <div className="bg-sky-500 h-full rounded-full transition-all duration-300" style={{ width: `${getCategoryProgress("DSA")}%` }}></div>
+                  <div className="w-full bg-background-deep rounded-full h-1.5 overflow-hidden border border-border-subtle">
+                    <div className="bar-grow bg-highlight h-full rounded-full transition-all duration-300" style={{ width: `${getCategoryProgress("DSA")}%` }}></div>
                   </div>
                 </div>
 
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-slate-300">Core Subjects (DBMS/OS)</span>
-                    <span className="text-sky-400">{getCategoryProgress("Subjects")}%</span>
+                    <span className="text-on-surface">Core Subjects (DBMS/OS)</span>
+                    <span className="text-highlight">{getCategoryProgress("Subjects")}%</span>
                   </div>
-                  <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-900">
-                    <div className="bg-sky-500 h-full rounded-full transition-all duration-300" style={{ width: `${getCategoryProgress("Subjects")}%` }}></div>
+                  <div className="w-full bg-background-deep rounded-full h-1.5 overflow-hidden border border-border-subtle">
+                    <div className="bar-grow bg-highlight h-full rounded-full transition-all duration-300" style={{ width: `${getCategoryProgress("Subjects")}%` }}></div>
                   </div>
                 </div>
               </div>

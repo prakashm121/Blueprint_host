@@ -1,34 +1,889 @@
 @import "tailwindcss";
 
-
-
+/*
+ * Cyanotype design system.
+ * Blueprints are white linework on Prussian blue; finished runs are marked with
+ * yellow highlighter and corrections with a red pencil. The palette follows that.
+ * Token names are kept from the previous system so every page re-skins from here.
+ */
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
 
-  /* Custom Design System Colors */
-  --color-surface-dim: #051424;
-  --color-surface-bright: #2c3a4c;
-  --color-surface-container-lowest: #010f1f;
-  --color-surface-container-low: #0d1c2d;
-  --color-surface-container: #122131;
-  --color-surface-container-high: #1c2b3c;
-  --color-surface-container-highest: #273647;
-  --color-on-surface: #d4e4fa;
-  --color-on-surface-variant: #c3c6d7;
-  --color-inverse-surface: #d4e4fa;
-  --color-inverse-on-surface: #233143;
-  --color-outline: #8d90a0;
-  --color-outline-variant: #434655;
-  --color-surface-tint: #b4c5ff;
-  --color-background-deep: #020617;
-  --color-surface-card: #0d1c2d; /* Matched lower profile background token */
-  --color-border-subtle: #1e2b3c;
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
+  /* Core palette */
+  --color-ink: #081f38;
+  --color-prussian: #0e3358;
+  --color-paper: #eaf1f8;
+  --color-line: #a6bfd8;
+  --color-highlight: #ffd166;
+  --color-redline: #ff8a70;
+
+  /* Page + surfaces (darkest to lightest) */
+  --color-background: #0a2a4a;
+  --color-background-deep: #0a2a4a;
+  --color-surface-container-lowest: #09264a;
+  --color-surface-dim: #0b2d50;
+  --color-surface: #0e3358;
+  --color-surface-base: #0e3358;
+  --color-surface-container-low: #0f365d;
+  --color-surface-card: #103a62;
+  --color-surface-container: #133f69;
+  --color-surface-container-high: #184a78;
+  --color-surface-variant: #184a78;
+  --color-surface-container-highest: #1e5586;
+  --color-surface-bright: #245f93;
+
+  /* Text + lines */
+  --color-on-surface: #eaf1f8;
+  --color-on-surface-variant: #a6bfd8;
+  --color-outline: #6f93b8;
+  --color-outline-variant: #2b5a88;
+  --color-border-subtle: #2b5a88;
+  --color-inverse-surface: #eaf1f8;
+  --color-inverse-on-surface: #0a2a4a;
+
+  /* Accents */
+  --color-primary: #ffd166;
+  --color-on-primary: #0a2747;
+  --color-primary-fixed: #ffe3a3;
+  --color-primary-fixed-dim: #ffd166;
+  --color-on-primary-fixed: #0a2747;
+  --color-on-primary-fixed-variant: #3a2a00;
+  --color-primary-container: #eaf1f8;
+  --color-surface-tint: #ffd166;
+  --color-secondary: #a9c9e8;
+  --color-secondary-fixed: #d3e5f6;
+  --color-secondary-fixed-dim: #a9c9e8;
+  --color-on-secondary-fixed: #0a2747;
+  --color-on-secondary-fixed-variant: #2b5a88;
+  --color-tertiary: #a9c9e8;
+  --color-tertiary-fixed: #d3e5f6;
+  --color-tertiary-fixed-dim: #a9c9e8;
+  --color-on-tertiary-fixed: #0a2747;
+  --color-on-tertiary-fixed-variant: #2b5a88;
+
+  /* Status */
+  --color-success: #4ade9b;
+  --color-warning: #f5b642;
+  --color-error: #ff8a70;
+
+  /* Motion */
+  --ease-draft: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Cleanup for injected custom LeetCode problem markup descriptions */
+/*
+ * Light theme: a whiteprint. Same drawing, inverted: Prussian-blue linework on white stock.
+ * "paper" and "line" are the foreground ink in both themes, so they flip here; "ink" stays dark
+ * because it is only ever used as text on the yellow highlighter.
+ * Unlayered on purpose: it must beat the @theme layer.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-paper: #0e3358;
+  --color-line: #3d5d80;
+
+  --color-background: #f4f7fb;
+  --color-background-deep: #f4f7fb;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-dim: #eaf0f7;
+  --color-surface: #f7f9fc;
+  --color-surface-base: #f7f9fc;
+  --color-surface-container-low: #f0f4f9;
+  --color-surface-card: #ffffff;
+  --color-surface-container: #eef3f9;
+  --color-surface-container-high: #e3ebf4;
+  --color-surface-variant: #e3ebf4;
+  --color-surface-container-highest: #d5e1ee;
+  --color-surface-bright: #c7d6e7;
+
+  --color-on-surface: #0e3358;
+  --color-on-surface-variant: #3d5d80;
+  --color-outline: #6584a6;
+  --color-outline-variant: #bfcfe1;
+  --color-border-subtle: #bfcfe1;
+  --color-inverse-surface: #0e3358;
+  --color-inverse-on-surface: #eaf1f8;
+
+  --color-secondary: #2b5a88;
+  --color-secondary-fixed-dim: #2b5a88;
+  --color-tertiary: #2b5a88;
+  --color-tertiary-fixed-dim: #2b5a88;
+  --color-primary-container: #0e3358;
+
+  --color-success: #13875a;
+  --color-warning: #a86b00;
+  --color-error: #c8432a;
+  --color-redline: #c8432a;
+
+  /* Text-strength yellow: the highlighter itself is unreadable as text on white. */
+  --color-highlight-text: #7a5200;
+
+  /*
+   * Pages use Tailwind's pale 200-400 tints as text on dark surfaces. On white they wash out,
+   * so in this theme those tints take the 700 value of the same hue.
+   */
+  --color-red-200: oklch(50.5% 0.213 27.518);
+  --color-red-300: oklch(50.5% 0.213 27.518);
+  --color-red-400: oklch(50.5% 0.213 27.518);
+  --color-orange-300: oklch(55.3% 0.195 38.402);
+  --color-orange-400: oklch(55.3% 0.195 38.402);
+  --color-amber-300: oklch(55.5% 0.163 48.998);
+  --color-amber-400: oklch(55.5% 0.163 48.998);
+  --color-yellow-400: oklch(55.4% 0.135 66.442);
+  --color-lime-400: oklch(53.2% 0.157 131.589);
+  --color-green-400: oklch(52.7% 0.154 150.069);
+  --color-emerald-300: oklch(50.8% 0.118 165.612);
+  --color-emerald-400: oklch(50.8% 0.118 165.612);
+  --color-teal-400: oklch(51.1% 0.096 186.391);
+  --color-cyan-400: oklch(52% 0.105 223.128);
+  --color-sky-400: oklch(50% 0.134 242.749);
+  --color-blue-400: oklch(48.8% 0.243 264.376);
+  --color-indigo-400: oklch(45.7% 0.24 277.023);
+  --color-violet-400: oklch(49.1% 0.27 292.581);
+  --color-purple-400: oklch(49.6% 0.265 301.924);
+  --color-fuchsia-400: oklch(51.8% 0.253 323.949);
+  --color-pink-400: oklch(52.5% 0.223 3.958);
+  --color-rose-300: oklch(51.4% 0.222 16.935);
+  --color-rose-400: oklch(51.4% 0.222 16.935);
+
+  /* Category tones (planner, notifications) */
+  --tone-violet: #7c3aed;
+  --tone-blue: #2563eb;
+  --tone-green: #15803d;
+  --tone-orange: #c2410c;
+  --tone-rose: #be123c;
+  --tone-sky: #0369a1;
+  --tone-slate: #475569;
+}
+
+/* Dark-theme values for tokens that only exist outside Tailwind's palette. */
+:root {
+  --color-highlight-text: #ffd166;
+  --tone-violet: #c084fc;
+  --tone-blue: #93c5fd;
+  --tone-green: #86efac;
+  --tone-orange: #fdba74;
+  --tone-rose: #fda4af;
+  --tone-sky: #7dd3fc;
+  --tone-slate: #cbd5e1;
+}
+
+/* The theme switch reveals the new theme as a growing circle (see src/lib/theme.js). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* ------------------------------------------------------------------ base */
+/* Element defaults live in @layer base: unlayered CSS would beat every Tailwind utility. */
+@layer base {
+
+  :root {
+    color-scheme: dark;
+    background: var(--color-background-deep);
+    color: var(--color-on-surface);
+    font-family: var(--font-sans);
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-background-deep);
+    color: var(--color-on-surface);
+    overflow-x: hidden;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  ::selection {
+    background: var(--color-highlight);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-highlight);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Material Symbols (loaded in index.html) */
+  .material-symbols-outlined {
+    font-family: "Material Symbols Outlined";
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    direction: ltr;
+    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-surface-container-highest);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-outline);
+  }
+  * {
+    scrollbar-color: var(--color-surface-container-highest) transparent;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* ------------------------------------------------------------ utilities */
+/* Component classes live in @layer components so utilities can still override them. */
+@layer components {
+
+  /* Display lettering: wide, heavy, tight — like the title on a drawing sheet. */
+  .type-display {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.04;
+  }
+
+  .type-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+
+  /* Blueprint grid: fine minor lines with a heavier line every 5th cell. */
+  .bg-grid-pattern,
+  .blueprint-grid {
+    --grid-major: color-mix(in srgb, var(--color-paper) 7%, transparent);
+    --grid-minor: color-mix(in srgb, var(--color-paper) 3.5%, transparent);
+    background-image:
+      linear-gradient(to right, var(--grid-major) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-major) 1px, transparent 1px),
+      linear-gradient(to right, var(--grid-minor) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-minor) 1px, transparent 1px);
+    background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+  }
+
+  /* A sheet of drawing paper: flat, hairline edge, no glassy blur. */
+  .glass-panel,
+  .sheet {
+    background: var(--color-surface-card);
+    border: 1px solid var(--color-border-subtle);
+  }
+
+  .card-hover-effect {
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+  }
+  .card-hover-effect:hover {
+    border-color: var(--color-outline);
+    background-color: var(--color-surface-container);
+  }
+
+  /* Registration (crop) marks for a framed element. */
+  .crop-marks {
+    position: relative;
+  }
+  .crop-marks::before,
+  .crop-marks::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    pointer-events: none;
+    border-color: color-mix(in srgb, var(--color-paper) 45%, transparent);
+    border-style: solid;
+  }
+  .crop-marks::before {
+    top: -8px;
+    left: -8px;
+    border-width: 1px 0 0 1px;
+  }
+  .crop-marks::after {
+    bottom: -8px;
+    right: -8px;
+    border-width: 0 1px 1px 0;
+  }
+
+  /* Yellow-lining: the way a draftsman marks a finished run on a print. */
+  .highlighter {
+    background-image: linear-gradient(
+      to right,
+      rgb(255 209 102 / 0.38),
+      rgb(255 209 102 / 0.38)
+    );
+    background-repeat: no-repeat;
+    background-position: 0 88%;
+    background-size: 0% 0.55em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    transition: background-size 0.45s var(--ease-draft);
+  }
+  .highlighter[data-on="true"] {
+    background-size: 100% 0.55em;
+  }
+
+  /* HTML labels laid over a 3D model; positioned every frame by the scene. */
+  .model-label {
+    position: absolute;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    white-space: nowrap;
+    will-change: transform;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  .model-label[data-shown="true"] {
+    opacity: 1;
+  }
+}
+
+/*
+ * Yellow as text only reads on the dark theme. These sit in the utilities layer with the same
+ * specificity as the utility they replace, so hover/focus variants still win over them.
+ */
+@layer utilities {
+  :where(:root[data-theme="light"]) .text-highlight,
+  :where(:root[data-theme="light"]) .text-primary,
+  :where(:root[data-theme="light"]) .text-primary-fixed-dim,
+  :where(:root[data-theme="light"]) .text-surface-tint {
+    color: var(--color-highlight-text);
+  }
+  /* Same for hover / group-hover states that turn text yellow (buttons, links, card titles). */
+  :where(:root[data-theme="light"]) :is([class*="hover:text-highlight"], [class*="hover:text-primary"]):is(:hover, :focus-visible),
+  :where(:root[data-theme="light"]) :is(.group:hover, .group:focus-visible) :is([class*="group-hover:text-highlight"], [class*="group-hover:text-primary"]) {
+    color: var(--color-highlight-text);
+  }
+  :where(:root[data-theme="light"]) [class~="text-primary/70"],
+  :where(:root[data-theme="light"]) [class~="text-primary/80"],
+  :where(:root[data-theme="light"]) [class~="text-highlight/80"] {
+    color: color-mix(in srgb, var(--color-highlight-text) 85%, transparent);
+  }
+}
+
+/* ---------------------------------------------------------- keyframes */
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes node-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes marker-in {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes route-trace {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  55%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* =====================================================================================
+ * Motion system
+ * Four durations and three easings, used everywhere:
+ *   --dur-1  press / tiny state changes     --ease-settle  things arriving (fast start, soft stop)
+ *   --dur-2  hover, menus, exits            --ease-exit    things leaving (gentle start, quick finish)
+ *   --dur-3  pages, dialogs, list entrances --ease-draft   things being drawn (bars, strokes)
+ *   --dur-4  progress fills, count-ups
+ * Only transform and opacity are animated, so it all stays on the compositor.
+ * ===================================================================================== */
+:root {
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 280ms;
+  --dur-4: 700ms;
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Top-of-page progress bar while data is loading: a short bar that sweeps across. */
+@keyframes fetch-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+
+@keyframes list-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+@keyframes dialog-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-down {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes panel-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes panel-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes menu-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* Success: a small pop, and a checkmark that draws itself. */
+@keyframes pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes success-ring {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-highlight) 45%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Progress rings draw in from empty (set --ring-full to the circumference). */
+@keyframes ring-in {
+  from {
+    stroke-dashoffset: var(--ring-full);
+  }
+}
+
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+}
+
+@keyframes handle-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes theme-icon-in {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.6);
+  }
+}
+
+/* Every enabled button gives under the finger, then springs back. */
+@layer base {
+  button,
+  [role="button"],
+  summary {
+    transition-property: color, background-color, border-color, outline-color, box-shadow, opacity, transform, translate;
+    transition-duration: var(--dur-2);
+    transition-timing-function: var(--ease-settle);
+  }
+  :is(button, [role="button"], .press):not(:disabled):active {
+    transform: scale(0.97);
+    transition-duration: var(--dur-1);
+  }
+  /* Focus rings ease in rather than snapping on. */
+  :focus-visible {
+    transition: outline-offset var(--dur-2) var(--ease-settle);
+  }
+}
+
+@layer components {
+  /* Cards that lead somewhere: lift slightly on hover, settle on press. */
+  .lift {
+    transition:
+      transform var(--dur-2) var(--ease-settle),
+      box-shadow var(--dur-2) var(--ease-settle),
+      border-color var(--dur-2) ease,
+      background-color var(--dur-2) ease;
+  }
+  @media (hover: hover) {
+    .lift:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px -14px rgb(2 12 26 / 0.55);
+    }
+    :root[data-theme="light"] .lift:hover {
+      box-shadow: 0 12px 28px -14px rgb(14 51 88 / 0.28);
+    }
+  }
+  .lift:active {
+    transform: translateY(0) scale(0.99);
+    transition-duration: var(--dur-1);
+  }
+
+  /* Icons that nudge towards where their link goes. */
+  .nudge {
+    transition: transform var(--dur-2) var(--ease-settle);
+  }
+  @media (hover: hover) {
+    .group:hover .nudge,
+    .nudge:hover {
+      transform: translate(2px, -2px);
+    }
+    .group:hover .nudge-x {
+      transform: translateX(3px);
+    }
+  }
+
+  /* Tooltips for icon-only buttons: data-tip="Label" (data-tip-side="bottom" near the top of the screen). */
+  [data-tip] {
+    position: relative;
+  }
+  @media (hover: hover) {
+    [data-tip]::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      z-index: 50;
+      translate: -50% 4px;
+      opacity: 0;
+      pointer-events: none;
+      white-space: nowrap;
+      border-radius: 6px;
+      background: var(--color-inverse-surface);
+      color: var(--color-inverse-on-surface);
+      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.3;
+      letter-spacing: 0;
+      text-transform: none;
+      transition:
+        opacity var(--dur-2) ease,
+        translate var(--dur-2) var(--ease-settle);
+    }
+    [data-tip][data-tip-side="bottom"]::after {
+      bottom: auto;
+      top: calc(100% + 8px);
+      translate: -50% -4px;
+    }
+    [data-tip]:is(:hover, :focus-visible)::after {
+      opacity: 1;
+      translate: -50% 0;
+      transition-delay: 350ms;
+    }
+  }
+
+  /* Skeletons: a soft sheen passes over the placeholder blocks. */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-paper) 7%, transparent), transparent);
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  /* Progress fills grow in from the left when they first appear. */
+  .bar-grow {
+    transform-origin: left center;
+    animation: bar-grow var(--dur-4) var(--ease-draft) backwards;
+  }
+
+  .pop {
+    animation: pop 320ms var(--ease-settle) both;
+  }
+  .pop-check {
+    animation: pop 320ms var(--ease-settle) both;
+  }
+  .pop-check path,
+  .pop-check polyline {
+    stroke-dasharray: 24;
+    animation: check-draw 260ms var(--ease-draft) 80ms both;
+  }
+  .success-ring {
+    animation: success-ring 600ms var(--ease-settle);
+  }
+}
+
+/* Pages settle in. `backwards` fill so no transform is left behind: a transformed ancestor would trap fixed modals. */
+.animate-page-in {
+  animation: page-in var(--dur-3) var(--ease-settle) backwards;
+}
+
+/* Staggered entrance for a small group of sections (dashboard). */
+.stagger-in > * {
+  animation: list-in 420ms var(--ease-settle) backwards;
+}
+.stagger-in > :nth-child(2) { animation-delay: 40ms; }
+.stagger-in > :nth-child(3) { animation-delay: 80ms; }
+.stagger-in > :nth-child(4) { animation-delay: 120ms; }
+.stagger-in > :nth-child(5) { animation-delay: 160ms; }
+.stagger-in > :nth-child(6) { animation-delay: 200ms; }
+.stagger-in > :nth-child(n + 7) { animation-delay: 240ms; }
+
+/*
+ * Lists: the first twelve items rise in with a small stagger; anything after that (long lists,
+ * "load more" pages) simply appears, so we never animate hundreds of rows.
+ */
+.stagger-list > :nth-child(-n + 12) {
+  animation: list-in var(--dur-3) var(--ease-settle) backwards;
+}
+.stagger-list > :nth-child(2) { animation-delay: 30ms; }
+.stagger-list > :nth-child(3) { animation-delay: 60ms; }
+.stagger-list > :nth-child(4) { animation-delay: 90ms; }
+.stagger-list > :nth-child(5) { animation-delay: 120ms; }
+.stagger-list > :nth-child(6) { animation-delay: 150ms; }
+.stagger-list > :nth-child(7) { animation-delay: 180ms; }
+.stagger-list > :nth-child(8) { animation-delay: 210ms; }
+.stagger-list > :nth-child(n + 9):nth-child(-n + 12) { animation-delay: 240ms; }
+
+/* Dialogs, sheets, panels and menus: in and out (see usePresence in lib/motion.js). */
+.backdrop-in {
+  animation: fade-in var(--dur-2) ease both;
+}
+.backdrop-out {
+  animation: fade-out var(--dur-2) ease both;
+}
+.dialog-in {
+  animation: dialog-in var(--dur-3) var(--ease-settle) both;
+}
+.dialog-out {
+  animation: dialog-out var(--dur-2) var(--ease-exit) both;
+}
+@media (max-width: 639px) {
+  /* On phones a dialog is a bottom sheet, so it slides. */
+  .dialog-in.as-sheet {
+    animation: sheet-up var(--dur-3) var(--ease-settle) both;
+  }
+  .dialog-out.as-sheet {
+    animation: sheet-down var(--dur-2) var(--ease-exit) both;
+  }
+}
+.panel-in {
+  animation: panel-in var(--dur-3) var(--ease-settle) both;
+}
+.panel-out {
+  animation: panel-out var(--dur-2) var(--ease-exit) both;
+}
+.menu-in {
+  animation: menu-in var(--dur-2) var(--ease-settle) both;
+}
+.menu-out {
+  animation: menu-out 140ms var(--ease-exit) both;
+}
+
+/* Scroll reveal (components/Reveal.jsx): once per element, never on the way back up. */
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 600ms var(--ease-settle),
+    transform 600ms var(--ease-settle);
+}
+.reveal[data-revealed="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+/* Accordion body: animates its height from 0 to auto via grid rows. */
+.accordion-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-3) var(--ease-settle);
+}
+.accordion-body[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+.accordion-body > * {
+  overflow: hidden;
+}
+
+.animate-rise-in {
+  animation: rise-in 0.45s var(--ease-settle) both;
+}
+
+/* ------------------------------------------- injected problem HTML (DSA) */
+
 .dynamic-html-content pre {
   background-color: var(--color-surface-container-lowest) !important;
   border: 1px solid var(--color-border-subtle) !important;
@@ -58,137 +913,34 @@
   margin: 0.5rem 0 !important;
 }
 
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+/* ------------------------------------------------------ reduced motion */
 
-  /* Custom Design System Colors */
-  --color-surface-dim: #051424;
-  --color-surface-bright: #2c3a4c;
-  --color-surface-container-lowest: #010f1f;
-  --color-surface-container-low: #0d1c2d;
-  --color-surface-container: #122131;
-  --color-surface-container-high: #1c2b3c;
-  --color-surface-container-highest: #273647;
-  --color-on-surface: #d4e4fa;
-  --color-on-surface-variant: #c3c6d7;
-  --color-inverse-surface: #d4e4fa;
-  --color-inverse-on-surface: #233143;
-  --color-outline: #8d90a0;
-  --color-outline-variant: #434655;
-  --color-surface-tint: #b4c5ff;
-  --color-primary-fixed: #dbe1ff;
-  --color-primary-fixed-dim: #b4c5ff;
-  --color-on-primary-fixed: #00174b;
-  --color-on-primary-fixed-variant: #003ea8;
-  --color-secondary-fixed: #dae2fd;
-  --color-secondary-fixed-dim: #bec6e0;
-  --color-on-secondary-fixed: #131b2e;
-  --color-on-secondary-fixed-variant: #3f465c;
-  --color-tertiary-fixed: #e1e0ff;
-  --color-tertiary-fixed-dim: #c0c1ff;
-  --color-on-tertiary-fixed: #07006c;
-  --color-on-tertiary-fixed-variant: #2f2ebe;
-  --color-background-deep: #020617;
-  --color-surface-card: #1E293B;
-  --color-border-subtle: #334155;
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-}
-
-/* Custom Scrollbar for modern engineering-first feel */
-::-webkit-scrollbar {
-  width: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-surface-container-highest);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-subtle);
-}
-
-.card-hover-effect {
-  transition: all 0.2s ease-in-out;
-}
-.card-hover-effect:hover {
-  border-color: var(--color-outline);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  transform: translateY(-2px);
-}
-
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-/* Custom glass panel style */
-.glass-panel {
-  background: rgba(30, 41, 59, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(51, 65, 85, 0.8);
-}
-
-.bg-grid-pattern {
-  background-image: 
-    linear-gradient(to right, rgba(51, 65, 85, 0.1) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(51, 65, 85, 0.1) 1px, transparent 1px);
-  background-size: 24px 24px;
-}
-
-.glow-effect {
-  position: absolute;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(37, 99, 235, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-:root {
-  color-scheme: dark;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #f8fafc;
-  background: radial-gradient(circle at top, rgba(59, 130, 246, 0.15), transparent 30%),
-    radial-gradient(circle at 80% 10%, rgba(56, 189, 248, 0.12), transparent 24%),
-    linear-gradient(180deg, #020617 0%, #0f172a 100%);
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  min-height: 100%;
-}
-
-body {
-  margin: 0;
-  background: transparent;
-  color: #e2e8f0;
-  overflow-x: hidden;
-}
-
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
-
-a {
-  color: inherit;
-}
-
-::selection {
-  background: rgba(56, 189, 248, 0.35);
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+  /* No movement: hover lifts, presses and the skeleton sheen stay still; colour changes remain. */
+  .lift:hover,
+  .lift:active,
+  .group:hover .nudge,
+  .nudge:hover,
+  .group:hover .nudge-x,
+  :is(button, [role="button"], .press):not(:disabled):active {
+    transform: none;
+  }
+  .shimmer::after {
+    display: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

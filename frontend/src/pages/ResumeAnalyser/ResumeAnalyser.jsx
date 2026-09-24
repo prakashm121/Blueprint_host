@@ -220,10 +220,65 @@ export default function ResumeAnalyser() {
     );
   };
 
+  const historyList = (
+      loadingHistory ? (
+        // Skeleton rows the same size as real history items, so nothing jumps when they load.
+        [0, 1, 2].map((i) => (
+          <div key={i} className="shimmer space-y-3 rounded-xl border border-surface-variant p-4">
+            <div className="h-5 w-20 rounded-md bg-surface-variant" />
+            <div className="h-3.5 w-3/4 rounded bg-surface-variant" />
+          </div>
+        ))
+      ) : history.length === 0 ? (
+        <div className="text-center py-10 opacity-60">
+          <FileText className="w-10 h-10 mx-auto mb-3 opacity-50" />
+          <p className="text-sm">No past analyses found.</p>
+        </div>
+      ) : (
+        history.map((item) => (
+          <button
+            type="button"
+            key={item.id}
+            className={clsx(
+              "lift block w-full text-left p-4 rounded-xl border cursor-pointer",
+              analysis?.id === item.id 
+                ? "bg-primary/10 border-primary shadow-[0_0_15px_rgba(var(--color-primary-rgb),0.1)]" 
+                : "bg-surface border-surface-variant hover:border-primary/50 hover:bg-surface-variant/50"
+            )}
+            onClick={() => loadPastAnalysis(item)}
+            aria-current={analysis?.id === item.id ? 'true' : undefined}
+          >
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-xs font-semibold px-2 py-1 bg-surface-variant text-on-surface rounded-md">
+                {item.status === "COMPLETED" ? `Score: ${item.ats_score}` : item.status === "FAILED" ? "Failed" : "Processing…"}
+              </span>
+              <span className="text-[10px] text-on-surface-variant flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {new Date(item.created_at).toLocaleDateString()}
+              </span>
+            </div>
+            <p className="text-sm font-medium truncate" title={item.file_name}>
+              {item.file_name || "Resume.pdf"}
+            </p>
+            {item.status === "FAILED" && (
+              <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" /> Analysis Failed
+              </p>
+            )}
+            {(item.status === "PENDING" || item.status === "PROCESSING") && (
+              <p className="text-xs text-primary mt-2 flex items-center gap-1">
+                <Clock className="w-3 h-3" /> Still processing
+              </p>
+            )}
+          </button>
+        ))
+      )
+  );
+
   return (
     <div className="flex h-full min-h-screen bg-background-deep text-on-surface">
       {/* Main Content */}
-      <div className="flex-1 p-8 overflow-y-auto">
+      <div className="flex-1 px-5 py-6 sm:p-8 overflow-y-auto">
         <div className="max-w-4xl mx-auto space-y-8">
           
           <div>
@@ -277,7 +332,7 @@ export default function ResumeAnalyser() {
                   <p className="text-lg font-semibold">Click or drag your PDF here</p>
                   <p className="text-sm text-on-surface-variant mt-1">Only text-extractable PDFs are supported. Max 5MB.</p>
                 </div>
-                <button className="btn-primary mt-4 pointer-events-auto" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+                <button type="button" className="mt-4 pointer-events-auto inline-flex min-h-11 items-center justify-center rounded-lg bg-highlight px-5 text-sm font-semibold text-ink transition-colors hover:bg-primary-fixed" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
                   Select File
                 </button>
               </div>
@@ -458,6 +513,17 @@ export default function ResumeAnalyser() {
 
             </div>
           )}
+
+          {/* History for stacked layouts (the sidebar below is desktop-only) */}
+          <section className="lg:hidden" aria-labelledby="history-heading-mobile">
+            <div className="flex items-center gap-2 mb-4">
+              <History className="w-5 h-5 text-primary" aria-hidden="true" />
+              <h2 id="history-heading-mobile" className="font-bold text-lg tracking-wide">Analysis History</h2>
+            </div>
+            <div className="stagger-list space-y-3">
+              {historyList}
+            </div>
+          </section>
         </div>
       </div>
 
@@ -468,53 +534,8 @@ export default function ResumeAnalyser() {
           <h2 className="font-bold text-lg tracking-wide">Analysis History</h2>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-          {loadingHistory ? (
-            <div className="flex justify-center py-10">
-              <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-            </div>
-          ) : history.length === 0 ? (
-            <div className="text-center py-10 opacity-60">
-              <FileText className="w-10 h-10 mx-auto mb-3 opacity-50" />
-              <p className="text-sm">No past analyses found.</p>
-            </div>
-          ) : (
-            history.map((item) => (
-              <div 
-                key={item.id} 
-                className={clsx(
-                  "p-4 rounded-xl border transition-all cursor-pointer",
-                  analysis?.id === item.id 
-                    ? "bg-primary/10 border-primary shadow-[0_0_15px_rgba(var(--color-primary-rgb),0.1)]" 
-                    : "bg-surface border-surface-variant hover:border-primary/50 hover:bg-surface-variant/50"
-                )}
-                onClick={() => loadPastAnalysis(item)}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-xs font-semibold px-2 py-1 bg-surface-variant text-on-surface rounded-md">
-                    {item.status === "COMPLETED" ? `Score: ${item.ats_score}` : item.status === "FAILED" ? "Failed" : "Processing…"}
-                  </span>
-                  <span className="text-[10px] text-on-surface-variant flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {new Date(item.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-                <p className="text-sm font-medium truncate" title={item.file_name}>
-                  {item.file_name || "Resume.pdf"}
-                </p>
-                {item.status === "FAILED" && (
-                  <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> Analysis Failed
-                  </p>
-                )}
-                {(item.status === "PENDING" || item.status === "PROCESSING") && (
-                  <p className="text-xs text-primary mt-2 flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> Still processing
-                  </p>
-                )}
-              </div>
-            ))
-          )}
+        <div className="stagger-list flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+          {historyList}
         </div>
       </div>
     </div>

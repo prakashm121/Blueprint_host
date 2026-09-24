@@ -4,6 +4,9 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { api } from '../../api';
 import filterData from '../../data/filters.json';
+import FilterSheet, { FilterBar, FilterSelect } from '../../components/FilterSheet';
+
+const DIFFICULTY_LABELS = { EASY: 'Easy', MEDIUM: 'Medium', HARD: 'Hard' };
 
 const DIFFICULTY_COLORS = {
   EASY: { badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', icon: 'bg-emerald-500/10 text-emerald-400', iconHover: 'group-hover:bg-emerald-500/20', symbol: 'code' },
@@ -31,13 +34,13 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
     : (typeof problem.topic_tags === 'string' ? problem.topic_tags.split(',').map(t => t.replace(/['\[\]]/g, '').trim()) : []);
   
   const topics = rawTopics.slice(0, 2);
-  const acceptance = problem.acRate ? `${parseFloat(problem.acRate).toFixed(1)}%` : 'â€”';
+  const acceptance = problem.acRate ? `${parseFloat(problem.acRate).toFixed(1)}%` : '—';
   // Use first topic as the AI teach target
   const firstTopic = rawTopics[0] || problem.title || '';
 
   return (
     <div
-      className="group bg-surface-card border border-border-subtle rounded-xl p-5 hover:border-primary/40 transition-all hover:bg-surface-container-high cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm shrink-0"
+      className="lift group bg-surface-card border border-border-subtle rounded-xl p-5 hover:border-primary/40 hover:bg-surface-container-high cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm shrink-0"
       onClick={() => onOpen(problem.id)}
     >
       <div className="flex items-start gap-4 min-w-0 flex-1">
@@ -61,7 +64,7 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
                 key={t}
                 to={`/mentor?teach=${encodeURIComponent(t)}`}
                 onClick={e => e.stopPropagation()}
-                className="px-2 py-0.5 bg-surface-container-low rounded border border-border-subtle text-[11px] hover:border-primary/40 hover:text-primary transition-colors"
+                className="inline-flex items-center min-h-8 sm:min-h-0 px-2 py-0.5 bg-surface-container-low rounded border border-border-subtle text-[11px] hover:border-primary/40 hover:text-primary transition-colors"
                 title={`Ask AI to teach: ${t}`}
               >
                 {t}
@@ -91,6 +94,8 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
 
       <div className="flex items-center gap-3 justify-end shrink-0 pt-2 sm:pt-0 border-t border-border-subtle/40 sm:border-t-0">
         <button
+          data-tip="Bookmark"
+          aria-label="Bookmark"
           className="p-2 text-on-surface-variant hover:text-primary transition-colors rounded-lg hover:bg-surface-container"
           onClick={e => {
             e.stopPropagation(); 
@@ -99,7 +104,7 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
           <span className="material-symbols-outlined text-xl">bookmark</span>
         </button>
         <button 
-          className="px-4 py-2 bg-primary/10 text-primary border border-primary/20 text-xs font-bold rounded-lg hover:bg-primary hover:text-white transition-all"
+          className="px-4 py-2 bg-primary/10 text-primary border border-primary/20 text-xs font-bold rounded-lg hover:bg-primary hover:text-on-primary transition-all"
         >
           Open
         </button>
@@ -120,6 +125,29 @@ export default function DSAEngine() {
     val ? newParams.set(key, val) : newParams.delete(key);
     setSearchParams(newParams);
   };
+
+  // Filters live in a popup; choices are drafted there and applied together.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draft, setDraft] = useState({ company, topic, difficulty });
+  const openFilters = () => {
+    setDraft({ company, topic, difficulty });
+    setFiltersOpen(true);
+  };
+  const closeFilters = useCallback(() => setFiltersOpen(false), []);
+  const applyFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    for (const [k, v] of Object.entries(draft)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    setSearchParams(next);
+    setFiltersOpen(false);
+  };
+  const activeFilters = [
+    company && { key: 'company', label: company },
+    topic && { key: 'topic', label: topic },
+    difficulty && { key: 'difficulty', label: DIFFICULTY_LABELS[difficulty] ?? difficulty },
+  ].filter(Boolean);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['dsaStats'],
@@ -184,17 +212,21 @@ export default function DSAEngine() {
       <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto flex flex-col gap-4 md:gap-6 min-h-0">
         
         {/* Main Title Header */}
-        <div className="shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
+        <div className="shrink-0 space-y-3 pb-4 border-b border-border-subtle">
           <div>
-            <h2 className="text-2xl font-bold text-on-surface tracking-tight">Coding Problems</h2>
-            <p className="text-xs text-on-surface-variant">Master data structures and algorithms with curated roadmaps.</p>
+            <h2 className="type-title text-2xl text-on-surface">Coding problems</h2>
+            <p className="text-sm text-on-surface-variant">Practise by topic, difficulty and company. Open a problem to solve it.</p>
+          </div>
+          {/* Phones: filters open in a popup */}
+          <div className="md:hidden">
+            <FilterBar active={activeFilters} onOpen={openFilters} onRemove={(key) => updateParam(key, '')} />
           </div>
         </div>
 
         {/* Mobile-only compact stats strip */}
         <div className="lg:hidden shrink-0 bg-surface-container border border-border-subtle rounded-xl p-3 flex items-center justify-between gap-3">
           {statsLoading ? (
-            <div className="h-3 bg-surface-container-high rounded w-24 animate-pulse" />
+            <div className="shimmer h-3 bg-surface-container-high rounded w-24" />
           ) : (
             <>
               <div className="text-sm font-bold text-on-surface">
@@ -216,49 +248,50 @@ export default function DSAEngine() {
             {/* Problems Stream View Column */}
             <div className="lg:col-span-8 flex flex-col h-full space-y-4 min-h-0">
               
-              {/* Dynamic Filter Row */}
-              <div className="shrink-0 bg-surface-container border border-border-subtle rounded-xl p-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {/* Larger screens: filters sit on the page */}
+              <div className="hidden shrink-0 grid-cols-3 gap-2 rounded-xl border border-border-subtle bg-surface-container p-3 md:grid">
                 <select
+                  aria-label="Company"
                   value={company}
                   onChange={e => updateParam('company', e.target.value)}
-                  className="w-full bg-surface-container-low border border-border-subtle rounded-lg px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
+                  className="w-full cursor-pointer rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none transition-all focus:border-primary/50"
                 >
-                  <option value="">All Companies</option>
+                  <option value="">All companies</option>
                   {filterData.companies.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-
                 <select
+                  aria-label="Topic"
                   value={topic}
                   onChange={e => updateParam('topic', e.target.value)}
-                  className="w-full bg-surface-container-low border border-border-subtle rounded-lg px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
+                  className="w-full cursor-pointer rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none transition-all focus:border-primary/50"
                 >
-                  <option value="">All Topics</option>
+                  <option value="">All topics</option>
                   {filterData.topics.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
-
                 <select
+                  aria-label="Difficulty"
                   value={difficulty}
                   onChange={e => updateParam('difficulty', e.target.value)}
-                  className="w-full bg-surface-container-low border border-border-subtle rounded-lg px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
+                  className="w-full cursor-pointer rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none transition-all focus:border-primary/50"
                 >
-                  <option value="">All Difficulties</option>
+                  <option value="">All difficulties</option>
                   <option value="EASY">Easy</option>
                   <option value="MEDIUM">Medium</option>
                   <option value="HARD">Hard</option>
                 </select>
               </div>
 
-              {/* Problem list â€” only this scrolls */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-1 pb-4">
+              {/* Problem list — only this scrolls */}
+              <div className="stagger-list flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-1 pb-4">
                 {error && (
                   <div className="text-center py-8 text-rose-400 bg-rose-500/5 rounded-xl border border-rose-500/10 text-sm">
-                    {error}
+                    Problems didn&rsquo;t load. Check your connection and refresh the page.
                   </div>
                 )}
                 
                 {initialLoad && !error && (
                   [...Array(4)].map((_, i) => (
-                    <div key={i} className="bg-surface-card border border-border-subtle rounded-xl p-5 animate-pulse flex gap-4">
+                    <div key={i} className="shimmer bg-surface-card border border-border-subtle rounded-xl p-5 flex gap-4">
                       <div className="w-10 h-10 bg-surface-container rounded-lg shrink-0"></div>
                       <div className="flex-1 space-y-3 py-1">
                         <div className="h-4 bg-surface-container rounded w-1/3"></div>
@@ -271,7 +304,8 @@ export default function DSAEngine() {
                 {!initialLoad && problems.length === 0 && !error && (
                   <div className="text-center py-12 text-on-surface-variant bg-surface-container-low rounded-xl border border-border-subtle border-dashed">
                     <span className="material-symbols-outlined text-4xl opacity-40 mb-2 block">search_off</span>
-                    <p className="font-medium text-on-surface text-sm">No problems found matching filters.</p>
+                    <p className="font-medium text-on-surface text-sm">No problems match these filters.</p>
+                    <button type="button" onClick={openFilters} className="mt-3 text-sm font-semibold text-primary underline underline-offset-4">Change filters</button>
                   </div>
                 )}
 
@@ -283,21 +317,21 @@ export default function DSAEngine() {
                   {loading && !initialLoad && (
                     <div className="flex items-center gap-2 text-xs text-on-surface-variant">
                       <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                      Fetching entries...
+                      Loading more problems…
                     </div>
                   )}
                   {!hasMore && problems.length > 0 && (
-                    <p className="text-on-surface-variant/60 text-xs">All target nodes loaded from data graph.</p>
+                    <p className="text-on-surface-variant/60 text-xs">That&rsquo;s every problem for these filters.</p>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Stats sidebar â€” desktop only (mobile has compact strip above) */}
+            {/* Stats sidebar — desktop only (mobile has compact strip above) */}
             <aside className="hidden lg:flex lg:col-span-4 flex-col h-full overflow-y-auto custom-scrollbar space-y-4 pr-2">
               <section className="bg-surface-container border border-border-subtle rounded-xl p-5 shadow-sm">
                 {statsLoading ? (
-                  <div className="animate-pulse space-y-3">
+                  <div className="shimmer space-y-3">
                     <div className="h-3 bg-surface-container-high rounded w-1/3"></div>
                     <div className="h-8 bg-surface-container-high rounded w-1/2"></div>
                     <div className="h-2 bg-surface-container-high rounded"></div>
@@ -329,7 +363,7 @@ export default function DSAEngine() {
                       </div>
                       <div className="h-1.5 w-full bg-surface-container-low rounded-full overflow-hidden border border-border-subtle">
                         <div
-                          className="h-full bg-emerald-500 transition-all duration-700 rounded-full"
+                          className="bar-grow h-full bg-emerald-500 transition-all duration-700 rounded-full"
                           style={{ width: `${stats?.total_target ? Math.min((stats.total_solved / stats.total_target) * 100, 100) : 0}%` }}
                         ></div>
                       </div>
@@ -365,7 +399,7 @@ export default function DSAEngine() {
                   </p>
                   <Link
                     to="/mentor"
-                    className="w-full flex items-center justify-center gap-2 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:brightness-110 transition-all shadow-sm"
+                    className="w-full flex items-center justify-center gap-2 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:brightness-110 transition-all shadow-sm"
                   >
                     <span className="material-symbols-outlined text-sm">auto_awesome</span>
                     Open AI Mentor
@@ -376,6 +410,35 @@ export default function DSAEngine() {
             
           </div>
         </main>
+
+      <FilterSheet open={filtersOpen} onClose={closeFilters} onApply={applyFilters} onClear={() => setDraft({ company: '', topic: '', difficulty: '' })}>
+        <FilterSelect label="Company" value={draft.company} onChange={(v) => setDraft((d) => ({ ...d, company: v }))}>
+          <option value="">All companies</option>
+          {filterData.companies.map((c) => <option key={c} value={c}>{c}</option>)}
+        </FilterSelect>
+        <FilterSelect label="Topic" value={draft.topic} onChange={(v) => setDraft((d) => ({ ...d, topic: v }))}>
+          <option value="">All topics</option>
+          {filterData.topics.map((t) => <option key={t} value={t}>{t}</option>)}
+        </FilterSelect>
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium text-line">Difficulty</legend>
+          <div className="grid grid-cols-4 gap-2">
+            {[['', 'Any'], ['EASY', 'Easy'], ['MEDIUM', 'Medium'], ['HARD', 'Hard']].map(([v, l]) => (
+              <button
+                key={l}
+                type="button"
+                aria-pressed={draft.difficulty === v}
+                onClick={() => setDraft((d) => ({ ...d, difficulty: v }))}
+                className={`min-h-11 cursor-pointer rounded-lg border text-sm font-semibold transition-colors ${
+                  draft.difficulty === v ? 'border-highlight bg-highlight text-ink' : 'border-border-subtle text-paper hover:border-outline'
+                }`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      </FilterSheet>
     </div>
   );
 }

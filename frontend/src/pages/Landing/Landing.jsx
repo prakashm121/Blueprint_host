@@ -1,485 +1,315 @@
-import { useEffect, useRef, useState, cloneElement, Children } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronDown } from 'lucide-react';
 
-import { FEATURES, STEPS } from './landingData';
-import GraphBackground from './GraphBackground';
-import BlueprintScene from './BlueprintScene';
+import { Wordmark } from '../../components/BrandMark';
+import ThemeToggle from '../../components/ThemeToggle';
+import Reveal from '../../components/Reveal';
+import PlanModel from '../../components/model/PlanModel';
+import { useInView, usePresence } from '../../lib/motion';
+import HeroDrawing from './HeroDrawing';
+import MeasuredStrip from './MeasuredStrip';
+import WeekDemo from './WeekDemo';
+import Faq from './Faq';
+import { PARTS, STEPS } from './landingData';
 
-// ─── CountUp ──────────────────────────────────────────────────────────────────
-function CountUp({ end, suffix = '', duration = 2000 }) {
-  const [val, setVal] = useState(0);
-  const ref     = useRef(null);
-  const started = useRef(false);
-  useEffect(() => {
-    const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting && !started.current) {
-        started.current = true;
-        const t0   = performance.now();
-        const tick = (now) => {
-          const p = Math.min((now - t0) / duration, 1);
-          setVal(Math.floor((1 - Math.pow(1 - p, 3)) * end));
-          if (p < 1) requestAnimationFrame(tick); else setVal(end);
-        };
-        requestAnimationFrame(tick);
-      }
-    }, { threshold: 0.5 });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [end, duration]);
-  return <span ref={ref}>{val.toLocaleString()}{suffix}</span>;
+// The example plan on the model: week 6 of 12, pinned to the matching floors.
+const HERO_LABELS = [
+  { floor: 0, side: 'left', title: 'Arrays & hashing', sub: 'Week 1', mobile: false },
+  { floor: 2, side: 'right', title: 'Trees & graphs', sub: 'Week 3', mobile: false },
+  { floor: 5, side: 'right', title: 'System design', sub: 'Week 6, this week', current: true },
+  { floor: 8, side: 'left', title: 'Mock interviews', sub: 'Week 9', mobile: false },
+  { floor: 11, side: 'left', title: 'Offer', sub: 'Week 12' },
+];
+
+// Exploded view: one slab per part, numbered like the parts list.
+const PART_LABELS = PARTS.map((p, i) => ({ floor: i, side: 'right', balloon: p.item }));
+
+const btnPrimary =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-highlight px-6 py-3.5 text-[0.95rem] font-semibold text-ink transition-[background-color,transform,box-shadow] hover:-translate-y-0.5 hover:bg-primary-fixed hover:shadow-lg hover:shadow-highlight/25 active:translate-y-0';
+const btnSmall =
+  'inline-flex items-center justify-center rounded-lg bg-highlight px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-primary-fixed active:translate-y-px';
+const btnSecondary =
+  'inline-flex items-center justify-center rounded-lg border border-paper/30 px-6 py-3.5 text-[0.95rem] font-semibold text-paper transition-colors hover:border-paper/60 hover:bg-paper/5 active:translate-y-px';
+
+function Balloon({ n, active = false }) {
+  return (
+    <span
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[0.8rem] font-bold tabular-nums transition-colors duration-300 ${
+        active ? 'border-highlight bg-highlight text-ink' : 'border-paper/70 text-paper'
+      }`}
+      aria-hidden="true"
+    >
+      {n}
+    </span>
+  );
 }
 
-// ─── Reveal on Scroll ─────────────────────────────────────────────────────────
-function Reveal({ children, delay = 0, withScale = false }) {
-  const [isVisible, setIsVisible] = useState(false);
-  const ref = useRef(null);
+/** Parts list beside an exploded model. Hovering a row pulls its slab out; otherwise they take turns. */
+function PartsSection({ sectionRef }) {
+  const [hovered, setHovered] = useState(null);
+  const [cycled, setCycled] = useState(0);
+  const [viewRef, inView] = useInView({ threshold: 0.2, once: false });
+  const active = hovered ?? cycled;
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) {
-        setIsVisible(true);
-        obs.unobserve(el);
-      }
-    }, { threshold: 0.15 });
-    
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
-  const child = Children.only(children);
-  const childStyle = child.props.style || {};
-
-  const animatedStyle = {
-    ...childStyle,
-    opacity: isVisible ? 1 : 0,
-    transform: isVisible 
-      ? (withScale ? 'translateY(0px) scale(1)' : 'translateY(0px)')
-      : (withScale ? 'translateY(26px) scale(0.95)' : 'translateY(26px)'),
-    transition: `opacity 0.8s cubic-bezier(0.16,1,0.3,1) ${delay}ms, transform 0.8s cubic-bezier(0.16,1,0.3,1) ${delay}ms`,
-    willChange: 'opacity, transform'
-  };
-
-  return cloneElement(child, { ref, style: animatedStyle });
-}
-
-// ─── Landing Page ─────────────────────────────────────────────────────────────
-export default function Landing() {
-  const canvasRef    = useRef(null);
-  const featuresRef  = useRef(null);
-  const [active, setActive]           = useState(0);
-  const [scrolled, setScrolled]       = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  useEffect(() => {
-    const id = setInterval(() => setActive(a => (a + 1) % FEATURES.length), 4200);
-    return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    const fn = () => setScrolled(window.scrollY > 48);
-    window.addEventListener('scroll', fn);
-    return () => window.removeEventListener('scroll', fn);
-  }, []);
-
-  const f = FEATURES[active];
+    if (!inView || hovered !== null) return undefined;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+    const t = setInterval(() => setCycled((i) => (i + 1) % PARTS.length), 2600);
+    return () => clearInterval(t);
+  }, [inView, hovered]);
 
   return (
-    <div className="min-h-screen bg-[#0c1324] text-[#dce1fb] overflow-x-hidden">
-
-      {/* ── Global Styles ─────────────────────────────────────────────────── */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;800&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0');
-
-        html { scroll-behavior: smooth; }
-        *, *::before, *::after { font-family: 'Inter', sans-serif; box-sizing: border-box; }
-        .font-mono { font-family: 'JetBrains Mono', monospace !important; }
-        .material-symbols-outlined {
-          font-family: 'Material Symbols Outlined' !important;
-          font-style: normal; font-weight: normal; line-height: 1;
-          letter-spacing: normal; text-transform: none;
-          display: inline-block; white-space: nowrap; direction: ltr;
-        }
-
-        @keyframes _fadeInUp {
-          from { opacity: 0; transform: translateY(22px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes _slideRight {
-          from { opacity: 0; transform: translateX(-32px); }
-          to   { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes _glow {
-          0%   { opacity: .6; transform: scale(1);    box-shadow: 0 0 4px #89ceff; }
-          100% { opacity: 1;  transform: scale(1.18); box-shadow: 0 0 14px #89ceff; }
-        }
-        @keyframes _scan {
-          0%   { top: 0%;   opacity: .4; }
-          50%  { opacity: 1; }
-          100% { top: 100%; opacity: .4; }
-        }
-        @keyframes _pingSlow {
-          0%, 100% { transform: scale(1);   opacity: .6; }
-          50%      { transform: scale(1.9); opacity: 0; }
-        }
-        @keyframes _textShine {
-          0%   { background-position: 0%   50%; }
-          100% { background-position: 200% 50%; }
-        }
-        @keyframes _pulseRing {
-          0%   { transform: scale(0.95); opacity: 0.7; }
-          100% { transform: scale(1.05); opacity: 1; }
-        }
-
-        .hero-badge { animation: _fadeInUp  0.7s ease 0.05s both; }
-        .hero-h1    { animation: _slideRight 1.0s cubic-bezier(.16,1,.3,1) 0.1s both; }
-        .hero-sub   { animation: _fadeInUp  0.9s ease 0.28s both; }
-        .hero-cta   { animation: _fadeInUp  0.9s ease 0.44s both; }
-
-        .scan-line {
-          position:absolute; left:0; right:0; height:1px;
-          background:linear-gradient(90deg,transparent,rgba(137,206,255,.4),transparent);
-          animation:_scan 4s ease-in-out infinite; pointer-events:none;
-        }
-
-        .fc-cta { opacity:0; transform:translateX(-10px); transition:opacity .25s,transform .25s; }
-        .fc:hover .fc-cta { opacity:1; transform:translateX(0); }
-
-        .fc::after {
-          content:''; position:absolute; top:-100%; left:-100%; width:50%; height:300%;
-          background:linear-gradient(to right,transparent,rgba(137,206,255,0.15),transparent);
-          transform:rotate(45deg); pointer-events:none; z-index:10;
-        }
-        .fc:hover::after { animation:scan-card 1.5s ease-in-out infinite; }
-        @keyframes scan-card { 0%{top:-100%;left:-100%;} 100%{top:100%;left:100%;} }
-
-        .step-box { background:#0f172a; border:1px solid rgba(51,65,85,.6); }
-        .dot-grid {
-          background-image:radial-gradient(circle,rgba(137,206,255,.055) 1px,transparent 1px);
-          background-size:38px 38px;
-        }
-      `}</style>
-
-      {/* ── Nav ───────────────────────────────────────────────────────────── */}
-      <header className={`fixed top-0 w-full z-50 transition-all duration-500 ${scrolled
-        ? 'bg-[#0c1324]/90 backdrop-blur-xl border-b border-[#1e293b]/40 shadow-[0_1px_8px_rgba(0,0,0,0.2)]'
-        : 'bg-transparent'}`}>
-        <div className="h-20 max-w-[1280px] mx-auto px-6 lg:px-8 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <span className="material-symbols-outlined text-[#89ceff] text-3xl">award_star</span>
-              <span className="absolute inset-0 rounded-full bg-[#89ceff]/15" style={{ animation: '_pingSlow 3s ease infinite' }} />
-            </div>
-            <span className="font-mono text-lg font-bold tracking-tighter text-white uppercase">Blueprint</span>
-          </div>
-
-          <nav className="hidden lg:flex items-center gap-10">
-            {['Features', 'How it Works'].map(l => (
-              <button key={l} onClick={() => featuresRef.current?.scrollIntoView({ behavior: 'smooth' })}
-                className="font-mono text-xs font-semibold tracking-[.1em] text-[#bec8d2] hover:text-[#89ceff] transition-colors uppercase">
-                {l}
-              </button>
-            ))}
-            <Link to="/login" className="font-mono text-xs font-semibold tracking-[.1em] text-[#bec8d2] hover:text-[#89ceff] transition-colors uppercase">Login</Link>
-            <Link to="/register" className="px-6 py-2.5 bg-[#89ceff] text-[#00344d] font-mono text-xs font-bold tracking-[.1em] uppercase rounded-full hover:shadow-[0_0_24px_rgba(137,206,255,.4)] hover:scale-105 active:scale-95 transition-all">
-              Get Started
-            </Link>
-          </nav>
-
-          <button className="lg:hidden text-[#dce1fb] p-2 -mr-2" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-            <span className="material-symbols-outlined">{mobileMenuOpen ? 'close' : 'menu'}</span>
-          </button>
+    <section ref={sectionRef} className="scroll-mt-16 bg-surface-dim py-20 sm:py-28">
+      <div ref={viewRef} className="mx-auto grid max-w-6xl gap-10 px-5 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] lg:gap-14">
+        <div className="lg:sticky lg:top-24 lg:self-start">
+          <Reveal>
+            <h2 className="type-title text-3xl text-paper sm:text-[2.6rem]">Everything the plan draws on.</h2>
+            <p className="mt-4 max-w-sm leading-relaxed text-line">
+              Eight parts that feed one plan. Each one takes its turn in the model; point at a row to pull that part out.
+            </p>
+          </Reveal>
+          <PlanModel
+            variant="exploded"
+            labels={PART_LABELS}
+            highlight={active}
+            label={`Exploded 3D model of Blueprint's eight parts. Part ${PARTS[active].item}, ${PARTS[active].name}, is pulled out.`}
+            className="mx-auto mt-4 aspect-[5/4] w-full max-w-md lg:mt-2 lg:aspect-square"
+          />
         </div>
 
-        {mobileMenuOpen && (
-          <div className="lg:hidden absolute top-20 left-0 w-full bg-[#0c1324]/95 backdrop-blur-xl border-b border-[#1e293b]/40 shadow-xl px-6 py-6 flex flex-col gap-6">
-            <div className="flex flex-col gap-4">
-              {['Features', 'How it Works'].map(l => (
-                <button key={l} onClick={() => { setMobileMenuOpen(false); featuresRef.current?.scrollIntoView({ behavior: 'smooth' }); }}
-                  className="text-left font-mono text-sm font-semibold tracking-[.1em] text-[#bec8d2] hover:text-[#89ceff] transition-colors uppercase">{l}</button>
-              ))}
+        <table className="w-full border-collapse text-left" onMouseLeave={() => setHovered(null)}>
+          <caption className="sr-only">Parts of Blueprint</caption>
+          <thead className="sr-only sm:not-sr-only">
+            <tr className="border-y border-paper/40 text-[0.8rem] text-line">
+              <th scope="col" className="w-14 py-2.5 font-medium">Item</th>
+              <th scope="col" className="w-44 py-2.5 pr-6 font-medium">Part</th>
+              <th scope="col" className="py-2.5 pr-6 font-medium">What it does</th>
+              <th scope="col" className="py-2.5 text-right font-medium">Quantity</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PARTS.map((p, i) => (
+              <tr
+                key={p.item}
+                onMouseEnter={() => setHovered(i)}
+                className={`grid grid-cols-[2.25rem_minmax(0,1fr)] gap-x-3 border-b border-border-subtle py-5 transition-colors duration-300 first:border-t sm:table-row sm:py-0 sm:first:border-t-0 ${
+                  active === i ? 'bg-paper/[0.05]' : ''
+                }`}
+              >
+                <td className="row-span-3 sm:table-cell sm:py-5 sm:pl-2 sm:align-top">
+                  <Balloon n={p.item} active={active === i} />
+                </td>
+                <th scope="row" className="text-base font-semibold text-paper sm:table-cell sm:py-5 sm:pr-6 sm:pt-[1.45rem] sm:align-top">
+                  {p.name}
+                </th>
+                <td className="mt-1 text-[0.95rem] leading-relaxed text-line sm:mt-0 sm:table-cell sm:py-5 sm:pr-6 sm:pt-[1.45rem] sm:align-top">
+                  {p.body}
+                </td>
+                <td className="mt-2 text-sm font-semibold tabular-nums text-paper sm:mt-0 sm:table-cell sm:whitespace-nowrap sm:py-5 sm:pr-2 sm:pt-[1.5rem] sm:text-right sm:align-top">
+                  {p.qty}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+export default function Landing() {
+  const partsRef = useRef(null);
+  const stepsRef = useRef(null);
+  const faqRef = useRef(null);
+  const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menu = usePresence(menuOpen, 140);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const scrollTo = (ref) => {
+    setMenuOpen(false);
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const navLinks = [
+    { label: 'Features', ref: partsRef },
+    { label: 'How it works', ref: stepsRef },
+    { label: 'Questions', ref: faqRef },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background-deep text-paper" style={{ animation: 'fade-in 0.5s ease both' }}>
+      {/* ── Navigation ─────────────────────────────────────────────── */}
+      <header
+        className={`fixed inset-x-0 top-0 z-50 transition-colors duration-300 ${
+          scrolled || menuOpen
+            ? 'border-b border-border-subtle bg-background-deep/92 backdrop-blur-md'
+            : 'border-b border-transparent'
+        }`}
+      >
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
+          <Link to="/" aria-label="Blueprint home">
+            <Wordmark />
+          </Link>
+
+          <nav className="hidden items-center gap-8 md:flex" aria-label="Main">
+            {navLinks.map((l) => (
+              <button
+                key={l.label}
+                onClick={() => scrollTo(l.ref)}
+                className="cursor-pointer text-sm font-medium text-line transition-colors hover:text-paper"
+              >
+                {l.label}
+              </button>
+            ))}
+            <Link to="/login" className="text-sm font-medium text-line transition-colors hover:text-paper">
+              Log in
+            </Link>
+            <div className="flex items-center gap-3">
+              <ThemeToggle />
+              <Link to="/login" className={btnSmall}>
+                Start your plan
+              </Link>
             </div>
-            <div className="flex flex-col gap-4 pt-4 border-t border-[#1e293b]/40">
-              <Link to="/login" className="font-mono text-sm font-semibold tracking-[.1em] text-[#bec8d2] hover:text-[#89ceff] transition-colors uppercase">Login</Link>
-              <Link to="/register" className="text-center py-3 bg-[#89ceff] text-[#00344d] font-mono text-xs font-bold tracking-[.1em] uppercase rounded-full hover:shadow-[0_0_24px_rgba(137,206,255,.35)] transition-all">Get Started</Link>
-            </div>
+          </nav>
+
+          <div className="-mr-2 flex items-center gap-1 md:hidden">
+            <ThemeToggle />
+            <button
+              className="rounded-lg p-2 text-paper"
+              onClick={() => setMenuOpen((o) => !o)}
+              aria-expanded={menuOpen}
+              aria-controls="landing-menu"
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            >
+              <span className="material-symbols-outlined text-[26px]">{menuOpen ? 'close' : 'menu'}</span>
+            </button>
+          </div>
+        </div>
+
+        {menu.mounted && (
+          <div
+            id="landing-menu"
+            className={`border-t border-border-subtle px-5 pb-6 pt-2 md:hidden ${menu.closing ? 'menu-out' : 'menu-in'}`}
+          >
+            {navLinks.map((l) => (
+              <button key={l.label} onClick={() => scrollTo(l.ref)} className="block w-full py-3 text-left text-base font-medium text-paper">
+                {l.label}
+              </button>
+            ))}
+            <Link to="/login" className="block py-3 text-base font-medium text-paper">
+              Log in
+            </Link>
+            <Link to="/login" className={`${btnPrimary} mt-3 w-full`}>
+              Start your plan
+            </Link>
           </div>
         )}
       </header>
 
-      {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <section className="relative w-full min-h-screen flex items-center overflow-hidden">
-        <GraphBackground />
-
-        <div className="absolute inset-0 z-[1] pointer-events-none" style={{ background: `radial-gradient(ellipse 75% 65% at 50% 50%, rgba(12,19,36,0) 0%, rgba(12,19,36,0.55) 70%, rgba(12,19,36,0.9) 100%), linear-gradient(to bottom, rgba(12,19,36,0.2) 0%, rgba(12,19,36,0.5) 55%, rgba(12,19,36,0.98) 90%, #0c1324 100%)` }} />
-        <div className="absolute inset-0 z-[1] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 20% 80%, rgba(137,206,255,0.07) 0%, transparent 50%)' }}>
-          <div className="scan-line" />
-        </div>
-        <div className="absolute top-1/4 -left-24 w-[520px] h-[520px] bg-[#89ceff]/6 rounded-full blur-[130px] pointer-events-none" style={{ animation: '_pulseRing 5s ease-in-out infinite alternate' }} />
-        <div className="absolute bottom-1/4 -right-24 w-[420px] h-[420px] bg-[#bdc2ff]/6 rounded-full blur-[110px] pointer-events-none" style={{ animation: '_pulseRing 6s ease-in-out infinite alternate-reverse' }} />
-
-        <div className="relative z-[2] max-w-[1280px] mx-auto px-6 lg:px-8 w-full pt-24 pb-12 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-
-          {/* Left copy */}
-          <div className="lg:col-span-6 space-y-7">
-            <div className="hero-badge inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#89ceff]/10 border border-[#89ceff]/25 w-fit">
-              <span className="w-2 h-2 rounded-full bg-[#89ceff] block" style={{ animation: '_glow 1.5s ease-in-out infinite alternate' }} />
-              <span className="font-mono text-[11px] font-semibold tracking-[.15em] text-[#89ceff] uppercase">System Ready · V.04</span>
-            </div>
-
-            <h1 className="hero-h1 text-5xl sm:text-6xl lg:text-[70px] font-extrabold text-white leading-[1.08] tracking-tight max-w-2xl">
-              Build your engineering career with a{' '}
-              <span className="italic pr-1" style={{ backgroundImage: 'linear-gradient(90deg,#89ceff,#ffffff,#89ceff)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', animation: '_textShine 4s linear infinite', display: 'inline-block' }}>
-                plan
-              </span>
-              {', '}not luck.
-            </h1>
-
-            <p className="hero-sub text-lg text-[#bec8d2] leading-relaxed max-w-lg">
-              Blueprint gives you a role-specific weekly roadmap, 33,000+ curated interview questions,
-              an AI mentor that tracks your progress, and a resume analyser — everything to land your first engineering role.
-            </p>
-
-            <div className="hero-cta flex flex-wrap gap-4">
-              <Link to="/register" className="group flex items-center gap-2 px-8 py-4 bg-[#89ceff] text-[#00344d] font-mono text-xs font-bold tracking-[.12em] uppercase rounded-full hover:shadow-[0_0_32px_rgba(137,206,255,.45)] hover:scale-105 active:scale-95 transition-all">
-                START FOR FREE <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-              </Link>
-              <Link to="/login" className="flex items-center px-8 py-4 border border-[#3e4850] text-white font-mono text-xs font-bold tracking-[.12em] uppercase rounded-full hover:bg-[#191f31] hover:border-[#89ceff]/40 transition-all">
-                LOGIN TO PORTAL
-              </Link>
-            </div>
-          </div>
-
-          {/* Right — 3D Scene */}
-          <div className="lg:col-span-6 relative min-h-[400px] lg:min-h-[500px] w-full flex flex-col items-center justify-center">
-            <div ref={canvasRef} className="absolute inset-0 w-full h-full z-0 pointer-events-none" style={{ mixBlendMode: 'screen' }}>
-              <BlueprintScene containerRef={canvasRef} />
-            </div>
-
-            {/* Data Card */}
-            <div className="absolute top-4 right-0 w-full max-w-[310px] p-5 bg-[#0d1628]/60 backdrop-blur-md rounded-xl border border-[#1e293b]/50 hidden lg:block z-20 shadow-2xl">
-              <div className="mb-4">
-                <span className="font-mono text-[10px] font-semibold tracking-[.15em] text-[#89ceff] uppercase">Current Trajectory</span>
-                <div className="text-lg font-mono font-bold text-white mt-1">SR. BACKEND ENGINEER</div>
-                <div className="w-full bg-[#2e3447] h-1.5 mt-3 rounded-full overflow-hidden">
-                  <div className="bg-gradient-to-r from-[#89ceff] to-[#bdc2ff] h-full w-[65%] rounded-full" />
-                </div>
-                <div className="flex justify-between mt-1.5">
-                  <span className="font-mono text-[10px] text-[#88929b]">READINESS</span>
-                  <span className="font-mono text-[10px] text-[#89ceff]">65%</span>
-                </div>
+      <main>
+        {/* ── Hero ──────────────────────────────────────────────────── */}
+        <section className="blueprint-grid relative overflow-hidden pb-12 pt-28 sm:pt-32 lg:pb-16 lg:pt-32">
+          <div className="mx-auto grid max-w-6xl items-center gap-6 px-5 sm:px-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6">
+            {/* One orchestrated entrance: headline, copy and actions rise in turn. */}
+            <div className="stagger-in max-w-xl">
+              <h1 className="type-display text-balance text-[2.5rem] text-paper sm:text-[3.4rem] lg:text-[3.2rem] lg:[font-stretch:110%] xl:text-[3.45rem]">
+                Your placement plan, drawn to scale.
+              </h1>
+              <p className="mt-6 max-w-[34rem] text-lg leading-relaxed text-line">
+                Blueprint turns your target role and weakest skills into a weekly plan, then tracks your
+                coding practice, quizzes and resume against it. You always know what to do next.
+              </p>
+              <div className="mt-9 flex flex-wrap gap-3">
+                <Link to="/login" className={btnPrimary}>
+                  Start your plan
+                </Link>
+                <button onClick={() => scrollTo(stepsRef)} className={`${btnSecondary} cursor-pointer`}>
+                  See how it works
+                </button>
               </div>
+              <p className="mt-5 text-sm text-line">Free to use. You sign in with your Google account.</p>
+            </div>
 
-              <div className="grid grid-cols-3 gap-3 py-3 border-t border-b border-[#1e293b]/50 mb-3">
-                {[{ label: 'DSA', value: '142', sub: 'solved' }, { label: 'STREAK', value: '12', sub: 'days' }, { label: 'SCORE', value: '74', sub: 'ATS' }].map(s => (
-                  <div key={s.label} className="text-center">
-                    <div className="font-mono text-lg font-bold text-white">{s.value}</div>
-                    <div className="font-mono text-[9px] text-[#89ceff] uppercase">{s.label}</div>
-                    <div className="font-mono text-[9px] text-[#88929b]">{s.sub}</div>
+            <div className="-mx-5 w-[calc(100%+2.5rem)] sm:mx-auto sm:w-full sm:max-w-[640px]">
+              <PlanModel
+                progress={5 / 12}
+                labels={HERO_LABELS}
+                label="3D model of an example 12-week plan built as a tower, one floor per week. Weeks 1 to 5 are built, week 6, system design, is lit up as this week while a crane lifts the next floor, and the offer flag sits at the top."
+                className="aspect-square w-full sm:aspect-[6/5] lg:aspect-square"
+                fallback={
+                  <div className="crop-marks">
+                    <HeroDrawing />
                   </div>
-                ))}
-              </div>
-
-              <div className="space-y-2">
-                {[
-                  { t: 'Review Binary Trees', done: true, tag: 'DSA' },
-                  { t: 'System Design: URL Shortener', done: false, tag: 'DESIGN' },
-                  { t: 'Mock Interview — Amazon LP', done: false, tag: 'INTERVIEW' },
-                ].map((task, i) => (
-                  <div key={i} className="flex items-center gap-2.5">
-                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${task.done ? 'bg-[#89ceff]/20 border-[#89ceff]/50' : 'border-[#3e4850]'}`}>
-                      {task.done && <span className="material-symbols-outlined text-[#89ceff] text-[10px]">check</span>}
-                    </div>
-                    <span className={`text-[11px] flex-1 ${task.done ? 'line-through text-[#88929b]' : 'text-[#bec8d2]'}`}>{task.t}</span>
-                    <span className="font-mono text-[9px] text-[#88929b] border border-[#3e4850] rounded px-1.5 py-0.5">{task.tag}</span>
-                  </div>
-                ))}
-              </div>
+                }
+              />
+              <p className="-mt-3 text-center text-xs text-line" style={{ animation: 'fade-in 0.6s ease 2.4s both' }}>
+                Drag the model to turn it
+              </p>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[2]">
-          <button onClick={() => featuresRef.current?.scrollIntoView({ behavior: 'smooth' })}
-            className="flex flex-col items-center gap-1.5 text-[#88929b] hover:text-[#89ceff] transition-colors" aria-label="Scroll down">
-            <span className="font-mono text-[9px] tracking-[.2em] uppercase">Explore</span>
-            <ChevronDown className="w-4 h-4" />
-          </button>
-        </div>
-      </section>
+        <MeasuredStrip />
 
-      {/* ── Stats strip ───────────────────────────────────────────────────── */}
-      <section className="w-full bg-[#070d1f] border-y border-[#1e293b]/30">
-        <div className="max-w-[1280px] mx-auto px-6 lg:px-8 py-12">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:divide-x md:divide-[#1e293b]/30">
-            {[
-              { id: 'qs',  end: 33807, suffix: '+', label: 'Curated Questions', color: '#89ceff' },
-              { id: 'dsa', end: 3632,  suffix: '',  label: 'DSA Problems',      color: '#7bd0ff' },
-              { id: 'mcq', end: 5816,  suffix: '',  label: 'Engineering MCQs',  color: '#bdc2ff' },
-            ].map(s => (
-              <Reveal key={s.id}>
-                <div className="flex flex-col items-center md:items-start px-8 py-4">
-                  <span className="font-mono text-4xl font-extrabold" style={{ color: s.color }}>
-                    <CountUp end={s.end} suffix={s.suffix} />
-                  </span>
-                  <span className="font-mono text-[11px] font-semibold tracking-[.15em] text-[#88929b] uppercase mt-2 block">{s.label}</span>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
+        <PartsSection sectionRef={partsRef} />
 
-      {/* ── Features ──────────────────────────────────────────────────────── */}
-      <section ref={featuresRef} className="w-full py-24 bg-[#0c1324]">
-        <div className="max-w-[1280px] mx-auto px-6 lg:px-8">
-          <Reveal>
-            <div>
-              <span className="font-mono text-[10px] font-bold tracking-[.3em] text-[#89ceff] uppercase">Module Overview</span>
-              <h2 className="text-4xl md:text-5xl font-extrabold text-white mt-3 mb-16 max-w-xl leading-tight">Precision engineered features.</h2>
-            </div>
-          </Reveal>
+        <WeekDemo />
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
-            {/* Feature cards */}
-            <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-5">
-              {FEATURES.map((feat, i) => (
-                <Reveal key={i} delay={i * 60} withScale={true}>
-                  <button onClick={() => setActive(i)}
-                    className={`fc group w-full text-left relative p-7 rounded-2xl border transition-all duration-300 hover:-translate-y-1 overflow-hidden ${active === i ? 'border-[#89ceff]/30 bg-[#191f31]' : 'border-[#1e293b]/50 bg-[#191f31]/40 hover:bg-[#191f31]/80'}`}
-                    style={{ boxShadow: active === i ? `0 20px 40px -15px ${feat.shadow}` : 'none' }}>
-                    {active === i && <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl" style={{ background: `linear-gradient(90deg,transparent,${feat.color},transparent)` }} />}
-                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl" style={{ background: `radial-gradient(ellipse at top left,${feat.color}08,transparent 70%)` }} />
-                    <span className="material-symbols-outlined text-4xl mb-5 block relative z-10" style={{ color: feat.color }}>{feat.icon}</span>
-                    <h3 className="font-bold text-white text-base mb-2 relative z-10 group-hover:text-[#89ceff] transition-colors">{feat.tag}</h3>
-                    <p className="text-sm text-[#bec8d2] leading-relaxed relative z-10">{feat.body.slice(0, 90)}…</p>
-                    <div className="fc-cta mt-5 flex items-center gap-1.5 relative z-10 font-mono text-[11px] font-bold tracking-[.12em]" style={{ color: feat.color }}>
-                      {feat.cta} <span className="material-symbols-outlined text-sm">north_east</span>
-                    </div>
-                  </button>
+        {/* ── How it works ──────────────────────────────────────────── */}
+        <section ref={stepsRef} className="scroll-mt-16 border-t border-border-subtle bg-surface-dim py-20 sm:py-28">
+          <div className="mx-auto max-w-6xl px-5 sm:px-8">
+            <Reveal>
+              <h2 className="type-title max-w-2xl text-3xl text-paper sm:text-[2.6rem]">From sign-in to a plan in four steps.</h2>
+            </Reveal>
+
+            <ol className="relative mt-14 grid gap-10 border-l border-paper/40 pl-7 lg:grid-cols-4 lg:gap-8 lg:border-l-0 lg:border-t lg:pl-0 lg:pt-9">
+              {STEPS.map((s, i) => (
+                <Reveal as="li" key={s.title} delay={i * 110} className="relative">
+                  {/* Tick on the dimension line */}
+                  <span
+                    className="absolute -left-7 top-1.5 h-px w-4 bg-paper/70 lg:-top-9 lg:left-0 lg:h-4 lg:w-px"
+                    aria-hidden="true"
+                  />
+                  <span className="text-sm font-semibold tabular-nums text-highlight">Step {i + 1}</span>
+                  <h3 className="type-title mt-2 text-xl text-paper">{s.title}</h3>
+                  <p className="mt-2 max-w-xs leading-relaxed text-line">{s.body}</p>
                 </Reveal>
               ))}
-            </div>
-
-            {/* Sticky detail panel */}
-            <div className="lg:col-span-5 lg:sticky lg:top-24">
-              <Reveal delay={80}>
-                <div key={active} className="relative rounded-2xl border border-[#1e293b]/80 bg-[#191f31]/60 backdrop-blur overflow-hidden"
-                  style={{ animation: '_fadeInUp .35s ease both', boxShadow: `0 0 60px -10px ${f.shadow}` }}>
-                  <div className="h-0.5" style={{ background: `linear-gradient(90deg,transparent,${f.color},transparent)` }} />
-                  <div className="flex items-center gap-2 px-5 py-3 border-b border-[#1e293b]/50">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500/60" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500/60" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/60" />
-                    <span className="font-mono text-[11px] text-[#88929b] ml-3">blueprint / {f.tag.toLowerCase().replace(/ /g, '-')}</span>
-                  </div>
-                  <div className="p-7 space-y-5">
-                    <div>
-                      <span className="font-mono text-[10px] font-bold tracking-[.2em] uppercase block mb-2" style={{ color: f.color }}>{f.tag}</span>
-                      <h3 className="text-2xl font-bold text-white leading-snug">{f.headline}</h3>
-                    </div>
-                    <p className="text-sm text-[#bec8d2] leading-relaxed">{f.body}</p>
-                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border font-mono text-xs font-medium"
-                      style={{ borderColor: `${f.color}30`, color: f.color, background: `${f.color}0a` }}>
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: f.color, animation: '_pulseRing 1.5s ease-in-out infinite alternate' }} />
-                      {f.stat}
-                    </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      {FEATURES.map((_, i) => (
-                        <button key={i} onClick={() => setActive(i)} className="rounded-full transition-all duration-300"
-                          style={{ width: active === i ? '22px' : '6px', height: '6px', backgroundColor: active === i ? f.color : '#3e4850' }} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </Reveal>
-            </div>
+            </ol>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ── How it Works ──────────────────────────────────────────────────── */}
-      <section className="w-full py-24 bg-[#070d1f] dot-grid relative overflow-hidden">
-        <div className="max-w-[1280px] mx-auto px-6 lg:px-8 relative z-10">
-          <Reveal>
-            <div className="text-center mb-20">
-              <span className="font-mono text-[10px] font-bold tracking-[.3em] text-[#89ceff] uppercase">The Process</span>
-              <h2 className="text-3xl md:text-4xl font-extrabold text-white mt-3">From onboarding to offer letter.</h2>
-            </div>
-          </Reveal>
-          <div className="hidden lg:block absolute top-[calc(50%-10px)] left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#1e293b]/60 to-transparent z-0" />
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 relative z-10">
-            {STEPS.map((step, i) => (
-              <Reveal key={i} delay={i * 90}>
-                <div className="flex flex-col items-center lg:items-start text-center lg:text-left gap-4">
-                  <div className="step-box relative w-[88px] h-[88px] rounded-2xl flex items-center justify-center shadow-xl shrink-0">
-                    <span className="font-mono text-3xl font-extrabold absolute -top-4 -right-3 opacity-[.12]" style={{ color: step.color }}>{step.n}</span>
-                    <span className="material-symbols-outlined text-[40px]" style={{ color: step.color }}>{step.icon}</span>
-                  </div>
-                  <h4 className="font-bold text-white text-base">{step.title}</h4>
-                  <p className="text-sm text-[#88929b] leading-relaxed">{step.body}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
+        <div ref={faqRef} className="scroll-mt-16">
+          <Faq />
         </div>
-      </section>
 
-      {/* ── CTA ───────────────────────────────────────────────────────────── */}
-      <section className="w-full py-24 bg-[#89ceff] relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[.06]" style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/carbon-fibre.png')" }} />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[1px] bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-        <Reveal>
-          <div className="relative max-w-[1280px] mx-auto px-6 lg:px-8 text-center z-10">
-            <h2 className="text-[42px] lg:text-[56px] font-extrabold text-[#00344d] leading-[1.1] mb-6 max-w-4xl mx-auto">
-              Stop leaving your future to chance.{' '}
-              <span className="opacity-60">Start your blueprint today.</span>
-            </h2>
-            <div className="flex flex-col md:flex-row gap-5 justify-center items-center">
-              <Link to="/register" className="px-12 py-4 bg-[#00344d] text-[#89ceff] font-mono text-sm font-bold tracking-[.12em] uppercase rounded-full hover:scale-105 active:scale-95 transition-all duration-300 shadow-xl hover:shadow-[0_0_35px_rgba(137,206,255,0.45)] hover:-translate-y-1">
-                CREATE FREE ACCOUNT
+        {/* ── Closing ───────────────────────────────────────────────── */}
+        <section className="blueprint-grid border-t border-border-subtle py-20 sm:py-28">
+          <div className="mx-auto max-w-6xl px-5 sm:px-8">
+            <Reveal className="crop-marks mx-auto max-w-2xl border border-paper/40 bg-background-deep/80 px-6 py-12 text-center sm:px-12">
+              <h2 className="type-display text-4xl text-paper sm:text-5xl">Start drawing your plan.</h2>
+              <p className="mx-auto mt-5 max-w-md leading-relaxed text-line">
+                Setting your target and rating your skills takes a few minutes. Your first roadmap is drafted right after.
+              </p>
+              <Link to="/login" className={`${btnPrimary} mt-8`}>
+                Start your plan
               </Link>
-              <span className="font-mono text-[11px] text-[#00344d]/50 uppercase tracking-widest">No credit card required</span>
-            </div>
+            </Reveal>
           </div>
-        </Reveal>
-      </section>
+        </section>
+      </main>
 
-      {/* ── Footer ────────────────────────────────────────────────────────── */}
-      <footer className="w-full bg-[#070d1f] border-t border-[#1e293b]/30 pt-16 pb-8">
-        <div className="max-w-[1280px] mx-auto px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
-            <div className="col-span-1 md:col-span-2">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="material-symbols-outlined text-[#89ceff]">award_star</span>
-                <span className="font-mono font-bold text-white uppercase tracking-tight">Blueprint</span>
-              </div>
-              <p className="text-sm text-[#88929b] max-w-xs leading-relaxed">Architecting the next generation of software engineers through precision-engineered education.</p>
-            </div>
-            <div className="flex flex-col gap-3">
-              <h4 className="font-mono text-xs font-bold tracking-[.15em] text-white uppercase mb-1">Platform</h4>
-              {['Interview Hub', 'Weekly Planner', 'AI Mentor', 'Resume Analyser'].map(l => (
-                <span key={l} className="text-sm text-[#88929b] hover:text-[#89ceff] transition-colors cursor-pointer">{l}</span>
-              ))}
-            </div>
-            <div className="flex flex-col gap-3">
-              <h4 className="font-mono text-xs font-bold tracking-[.15em] text-white uppercase mb-1">Support</h4>
-              {['Help Center', 'Contact', 'Privacy Policy'].map(l => (
-                <span key={l} className="text-sm text-[#88929b] hover:text-[#89ceff] transition-colors cursor-pointer">{l}</span>
-              ))}
-            </div>
-          </div>
-          <div className="pt-6 border-t border-[#1e293b]/40 flex flex-col md:flex-row justify-between items-center gap-4">
-            <span className="font-mono text-[10px] text-[#88929b] uppercase tracking-[.1em]">© 2026 Blueprint Education. All rights reserved.</span>
-            <div className="flex gap-8 font-mono text-[10px] text-[#88929b] uppercase tracking-[.1em]">
-              <span>STATED: STABLE_V.04</span>
-              <span>LATENCY: 12MS</span>
-            </div>
-          </div>
+      <footer className="border-t border-border-subtle py-10">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+          <Wordmark />
+          <p className="text-sm text-line">Placement prep for engineering students. © 2026 Blueprint</p>
         </div>
       </footer>
     </div>

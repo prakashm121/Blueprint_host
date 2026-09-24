@@ -30,25 +30,11 @@ export default function DSAProblemDetail() {
   const [bookmarked, setBookmarked] = useState(false);
   const [solved, setSolved] = useState(false);
 
+  // The problem itself is loaded by the query above; this only restores the user's solved status.
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await api.get(`/api/v1/hub/coding/${id}`);
-        setProblem(res.data);
-        // Check if already solved/bookmarked by this user
-        try {
-          const progressRes = await api.get(`/api/v1/hub/coding/${id}/progress`);
-          if (progressRes.data.status === 'solved') setSolved(true);
-        } catch { /* not yet attempted */ }
-      } catch {
-        setError('Failed to load problem.');
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
+    api.get(`/api/v1/hub/coding/${id}/progress`)
+      .then((res) => { if (res.data?.status === 'solved') setSolved(true); })
+      .catch(() => { /* not yet attempted */ });
   }, [id]);
 
   const handleAddNote = async () => {
@@ -80,8 +66,6 @@ export default function DSAProblemDetail() {
       setSolved(solved); // revert on failure
     }
   };
-
-  const toggleHint = key => setHintsOpen(prev => ({ ...prev, [key]: !prev[key] }));
 
   const handleSaveToVault = async () => {
     if (!problem) return;
@@ -138,7 +122,7 @@ export default function DSAProblemDetail() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-1.5 text-on-surface-variant hover:text-primary transition-colors text-xs font-semibold uppercase tracking-wider group"
+            className="-ml-2 flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-on-surface-variant hover:text-primary transition-colors text-xs font-semibold uppercase tracking-wider group"
           >
             <span className="material-symbols-outlined text-lg transition-transform group-hover:-translate-x-1">arrow_back</span>
             Back
@@ -178,7 +162,7 @@ export default function DSAProblemDetail() {
             href={problem?.problem_URL || '#'}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:brightness-110 transition-all shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:brightness-110 transition-all shadow-sm"
           >
             <span className="material-symbols-outlined text-sm">rocket_launch</span>
             <span className="hidden sm:inline">Solve on LeetCode</span>
@@ -309,7 +293,7 @@ export default function DSAProblemDetail() {
                       <span className="text-[9px] font-mono text-primary/70">{note.date}</span>
                       <button
                         onClick={() => setSavedNotes(prev => prev.filter((_, j) => j !== idx))}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-rose-400/60 hover:text-rose-400"
+                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 transition-opacity text-rose-400/60 hover:text-rose-400"
                       >
                         <span className="material-symbols-outlined text-sm">delete</span>
                       </button>
@@ -322,7 +306,7 @@ export default function DSAProblemDetail() {
           </section>
 
           {/* Ask AI */}
-          <section className="rounded-xl p-4 relative overflow-hidden border border-border-subtle" style={{ background: 'rgba(30,41,59,0.7)', backdropFilter: 'blur(12px)' }}>
+          <section className="rounded-xl p-4 relative overflow-hidden border border-border-subtle bg-surface-card">
             <div className="absolute -right-4 -top-4 w-20 h-20 bg-primary/10 rounded-full blur-2xl pointer-events-none"></div>
             <div className="flex items-center gap-2 mb-3">
               <span className="material-symbols-outlined text-primary text-lg">school</span>
@@ -333,7 +317,7 @@ export default function DSAProblemDetail() {
             </p>
             <Link
               to={`/mentor?teach=${encodeURIComponent(problem?.title || '')}`}
-              className="flex items-center justify-center gap-2 w-full py-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white text-xs font-bold rounded-xl transition-all"
+              className="flex items-center justify-center gap-2 w-full py-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-on-primary text-xs font-bold rounded-xl transition-all"
             >
               <span className="material-symbols-outlined text-sm">auto_awesome</span>
               Ask AI to Teach This

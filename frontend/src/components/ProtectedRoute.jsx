@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { api } from '../api';
 import Layout from './Layout';
+import LoadingScreen from './LoadingScreen';
 
 export default function ProtectedRoute() {
   const token = useAuthStore((state) => state.token);
@@ -19,9 +20,7 @@ export default function ProtectedRoute() {
 
   if (isAuthLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-pulse text-slate-400">Initializing...</div>
-      </div>
+      <LoadingScreen label="Checking your session…" />
     );
   }
 
@@ -31,9 +30,7 @@ export default function ProtectedRoute() {
 
   if (onboardingDone === null) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-pulse text-slate-400">Loading...</div>
-      </div>
+      <LoadingScreen label="Loading your plan…" />
     );
   }
 

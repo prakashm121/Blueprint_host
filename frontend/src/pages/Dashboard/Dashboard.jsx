@@ -1,25 +1,25 @@
 ﻿import React, { useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
+import PlanModel from '../../components/model/PlanModel';
+import { useCountUp } from '../../lib/motion';
 import {
-  Briefcase, ClipboardList, MessageSquare,
-  Sparkles, ChevronRight, Target, BookOpen, Code2,
-  FileText, LogOut, CheckSquare, Square, Plus, User, Map,
-  Brain, BarChart2
+  Briefcase, ClipboardList, MessageSquare, Sparkles, Target, BookOpen,
+  Code2, FileText, LogOut, Plus, User, Map, Check,
 } from 'lucide-react';
 
 const tileData = [
-  { title: 'Planner', text: 'Organize weekly goals and deadlines in one place.', icon: ClipboardList, link: '/planner', color: '#b4c5ff' },
-  { title: 'Role Roadmap', text: 'View your step-by-step career path and learning milestones.', icon: Map, link: '/roadmap', color: '#38bdf8' },
-  { title: 'AI Mentor', text: 'Ask questions, get interview prep help, and refine your resume.', icon: MessageSquare, link: '/mentor', color: '#c0c1ff' },
-  { title: 'Knowledge Vault', text: 'Save notes, flashcards, and topic references for review.', icon: BookOpen, link: '/vault', color: '#10B981' },
-  { title: 'DSA Practice', text: 'Master data structures and algorithms with curated problems.', icon: Code2, link: '/interview-hub/dsa', color: '#F43F5E' },
-  { title: 'Interview Q&A', text: 'Prepare confidently with company-specific behavioral and technical questions.', icon: Briefcase, link: '/interview-hub/qa', color: '#d4e4fa' },
-  { title: 'Quiz Engine', text: 'Test your knowledge across core subjects with rapid MCQs.', icon: Target, link: '/interview-hub/quiz', color: '#8B5CF6' },
-  { title: 'Resume Analyzer', text: 'Upload and analyze your resume to improve your fit.', icon: FileText, link: null, color: '#F59E0B' }
+  { title: 'Weekly planner', text: 'This week’s tasks and today’s schedule.', icon: ClipboardList, link: '/planner' },
+  { title: 'Roadmap', text: 'Milestones for your target role.', icon: Map, link: '/roadmap' },
+  { title: 'AI mentor', text: 'Explain a topic or plan your next steps.', icon: MessageSquare, link: '/mentor' },
+  { title: 'Knowledge vault', text: 'Bookmarks, saved insights and notes.', icon: BookOpen, link: '/vault' },
+  { title: 'Coding problems', text: 'Practise by topic, difficulty and company.', icon: Code2, link: '/interview-hub/dsa' },
+  { title: 'Interview Q&A', text: 'Open-ended questions for your role.', icon: Briefcase, link: '/interview-hub/qa' },
+  { title: 'Quiz', text: 'Timed multiple-choice rounds on core subjects.', icon: Target, link: '/interview-hub/quiz' },
+  { title: 'Resume analyser', text: 'ATS score and feedback for your target role.', icon: FileText, link: '/resume-analyser' },
 ];
 
 export default function Dashboard() {
@@ -62,7 +62,7 @@ export default function Dashboard() {
         if (milestone) {
           next_milestone = milestone.title;
         } else {
-          next_milestone = "All roadmap milestones completed dYZ%";
+          next_milestone = "All roadmap milestones completed";
         }
       } else if (profile?.college_name) {
         next_milestone = "Create your first weekly plan";
@@ -83,7 +83,7 @@ export default function Dashboard() {
 
       const dsa_score = dsa_total > 0 ? Math.min((dsaSolved / dsa_total) * 100, 100) : 0;
       const weekly_score = weekly_total > 0 ? (weekly_completed / weekly_total * 100) : 0;
-      const overall_readiness = Math.round((dsa_score * 0.5) + (weekly_score * 0.5) * 10) / 10;
+      const overall_readiness = Math.round((dsa_score * 0.5 + weekly_score * 0.5) * 10) / 10;
 
       return {
         profile: {
@@ -109,6 +109,8 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const [newItemText, setNewItemText] = useState("");
   const [newItemCategory, setNewItemCategory] = useState("DSA");
+  // The task the person just ticked, so only that one plays the completion animation.
+  const [justToggled, setJustToggled] = useState(null);
 
   // Daily plan is fetched fresh every time (staleTime: 0) so new task completions 
   // show up immediately without a page reload.
@@ -193,9 +195,9 @@ export default function Dashboard() {
   const quizAccuracy = quizStats?.accuracy_pct ?? 0;
 
   const welcomeName = useMemo(() => {
-    if (isLoading) return 'â€¦';
+    if (isLoading) return '';
     if (isError) return '';
-    return profile.full_name || 'Blueprint User';
+    return profile.full_name || '';
   }, [profile.full_name, isError, isLoading]);
 
   const targetDsa = stats.dsa_total;
@@ -206,19 +208,15 @@ export default function Dashboard() {
 
   // -- Helper Functions --
   const getReadinessLabel = (score) => {
-    if (score >= 85) return "Top 10% &bull; Placement Ready";
-    if (score >= 75) return "Needs Work &bull; Action Needed";
-    return "Critical Review Required";
-  };
-
-  const getStrokeDashOffset = (score) => {
-    const radius = 50;
-    const circumference = 2 * Math.PI * radius;
-    return circumference - (score / 100) * circumference;
+    if (score >= 85) return 'Placement ready';
+    if (score >= 60) return 'On track';
+    if (score >= 30) return 'Building momentum';
+    return 'Just getting started';
   };
 
   const handleToggleTask = (id) => {
-    // Optimistic UI only â€” task status update goes through planner task endpoint
+    setJustToggled(id);
+    // Optimistic UI only — task status update goes through planner task endpoint
     queryClient.setQueryData(['dailyPlan'], old => {
       if (!old) return old;
       return {
@@ -241,340 +239,362 @@ export default function Dashboard() {
       });
       queryClient.invalidateQueries({ queryKey: ['dailyPlan'] });
     } catch {
-      // Silent fail â€” UI still shows it optimistically via invalidation
+      // Silent fail — UI still shows it optimistically via invalidation
     }
     setNewItemText("");
   };
 
+  const readiness = Math.max(0, Math.min(100, Math.round(stats.overall_readiness)));
+  const readinessShown = useCountUp(readiness, { active: !isLoading, duration: 1400 });
+  const focusDone = focusItems.filter((i) => i.completed).length;
+  const todayLabel = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+
   return (
-    <div className="min-h-screen bg-background-deep text-on-surface font-sans pb-12 overflow-x-hidden">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-8 lg:px-8">
+    <div className="min-h-full bg-background-deep pb-16 text-on-surface">
+      <div className="stagger-in mx-auto flex max-w-6xl flex-col gap-8 px-5 py-8 sm:px-8 lg:py-10">
 
-        {/* Global Control Bar */}
-        <div className="flex justify-end gap-4 mb-2">
-          <Link
-            to="/profile"
-            className="flex items-center gap-2 rounded-xl bg-surface-card px-4 py-2 text-sm text-on-surface-variant border border-border-subtle hover:border-outline hover:text-on-surface transition-all"
-          >
-            <User className="h-4 w-4" />
-            Edit Profile
-          </Link>
-          <button
-            onClick={async () => { await supabase.auth.signOut(); logout(); navigate('/login'); }}
-            className="flex items-center gap-2 rounded-xl bg-surface-card px-4 py-2 text-sm text-on-surface-variant border border-border-subtle hover:border-outline hover:text-on-surface transition-all cursor-pointer"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </button>
-        </div>
-
-        {/* Premium Welcome Banner Card */}
-        <div className="relative bg-surface-card border border-border-subtle rounded-2xl p-6 overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
-          <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary-fixed-dim/10 rounded-full blur-3xl pointer-events-none"></div>
-          <div className="relative z-10">
-            <h2 className="text-xl font-bold text-on-surface tracking-tight">Welcome back, {welcomeName} 👋</h2><p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
-              Your next milestone target is: <span className="text-primary-fixed-dim font-semibold">{data?.next_milestone ?? 'Complete onboarding profile'}</span>
-            </p>
+        {/* Header */}
+        <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm text-line">{todayLabel}</p>
+            <h1 className="type-title mt-1 text-3xl text-paper sm:text-[2.4rem]">
+              Welcome back{welcomeName ? `, ${welcomeName}` : ''}
+            </h1>
           </div>
-          <div className="flex items-center gap-3 bg-surface-container-high border border-border-subtle rounded-xl py-2 px-4 shrink-0 relative z-10">
-            <Target className="w-5 h-5 text-primary-fixed-dim" />
-            <div className="text-left">
-              <span className="block text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Target Objective</span>
-              <span className="text-xs text-on-surface font-semibold">{profile.target_role || 'Software Engineer (L3)'}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Core Layout Grid: Placement Index & 2x2 Metric Stack */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-          {/* Left Block: Placement Readiness Circular Gauge */}
-          <div className="lg:col-span-5 bg-surface-card border border-border-subtle rounded-2xl p-6 flex flex-col items-center justify-between min-h-75">
-            <div className="w-full flex justify-between items-center border-b border-border-subtle/40 pb-3">
-              <h3 className="text-sm font-semibold text-on-surface">Placement Readiness</h3>
-              <span className="text-[10px] bg-primary-container/20 text-primary-fixed-dim font-bold px-2 py-0.5 rounded-full border border-primary-container/30">
-                Overall Match
-              </span>
-            </div>
-
-            <div className="relative flex items-center justify-center my-6">
-              <svg className="w-32 h-32 transform -rotate-90">
-                <circle cx="64" cy="64" r="50" stroke="var(--color-border-subtle)" strokeWidth="10" fill="transparent" />
-                <circle
-                  cx="64" cy="64" r="50" stroke="var(--color-primary-fixed-dim)" strokeWidth="10"
-                  strokeDasharray={`${2 * Math.PI * 50}`}
-                  strokeDashoffset={getStrokeDashOffset(stats.overall_readiness)}
-                  strokeLinecap="round" fill="transparent"
-                  className="transition-all duration-1000 ease-out"
-                />
-              </svg>
-              <div className="absolute text-center">
-                <span className="text-3xl font-extrabold text-on-surface tracking-tight">{stats.overall_readiness}%</span>
-                <span className="block text-[10px] text-on-surface-variant font-medium mt-0.5">EST. INDEX</span>
-              </div>
-            </div>
-
-            <div className="w-full text-center space-y-4">
-              <div>
-                <p className="text-sm font-bold text-on-surface">{getReadinessLabel(stats.overall_readiness)}</p>
-                <p className="text-xs text-on-surface-variant mt-0.5">Based on system evaluations across all core modules</p>
-              </div>
-              <button
-                onClick={() => navigate("/planner")}
-                className="w-full flex items-center justify-center gap-1 bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-semibold text-xs py-2.5 rounded-xl border border-border-subtle transition-colors cursor-pointer"
-              >
-                View Detailed Breakdown
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Right Block: 2x2 Dynamic Stats Grid */}
-          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-            {/* KPI Card 1: Algo Solved */}
-            <div className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect">
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Algo Solved</span>
-                  <p className="text-2xl font-bold text-on-surface mt-1">
-                    {stats.dsa_solved} <span className="text-xs text-on-surface-variant">/ {targetDsa}</span>
-                  </p>
-                </div>
-                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-success/10 text-success">
-                  <Code2 className="h-4 w-4" />
-                </div>
-              </div>
-              <div className="mt-4 space-y-1">
-                <div className="w-full bg-surface-container-high rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-success h-full rounded-full transition-all duration-500" style={{ width: `${dsaPercent}%` }}></div>
-                </div>
-                <span className="text-[10px] text-on-surface-variant block">Review structural coding challenges regularly</span>
-              </div>
-            </div>
-
-            {/* KPI Card 2: Subject Confidence */}
-            <div
-              className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect cursor-pointer"
-              onClick={() => navigate('/subjects')}
-              title="Manage subject confidence"
+          <div className="flex gap-2">
+            <Link to="/profile" className={btnGhost}>
+              <User className="h-4 w-4" aria-hidden="true" />
+              Edit profile
+            </Link>
+            <button
+              type="button"
+              onClick={async () => { await supabase.auth.signOut(); logout(); navigate('/login'); }}
+              className={`${btnGhost} cursor-pointer`}
             >
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Subject Confidence</span>
-                  {subjectTotal > 0 ? (
-                    <p className="text-2xl font-bold text-on-surface mt-1">
-                      {confidentCount} <span className="text-xs text-on-surface-variant">/ {subjectTotal} confident</span>
-                    </p>
-                  ) : (
-                    <p className="text-sm text-on-surface-variant mt-2">Rate your subjects</p>
-                  )}
-                </div>
-                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary-fixed-dim/10 text-primary-fixed-dim">
-                  <Brain className="h-4 w-4" />
-                </div>
+              <LogOut className="h-4 w-4" aria-hidden="true" />
+              Sign out
+            </button>
+          </div>
+        </header>
+
+        {isError && (
+          <div role="alert" className="border-l-2 border-redline bg-redline/10 px-4 py-3 text-sm text-paper">
+            Your summary didn&rsquo;t load. Refresh the page, or sign out and back in.
+          </div>
+        )}
+
+        {/* Title block: who this plan is drawn for */}
+        <dl className="grid grid-cols-1 border border-paper/35 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
+          <div className="border-b border-border-subtle px-5 py-4 sm:border-b-0 sm:border-r">
+            <dt className="text-xs font-medium text-line">Target role</dt>
+            <dd className="mt-1 font-semibold text-paper">
+              {profile.target_role || <Link to="/profile" className="text-highlight underline underline-offset-4">Set your target role</Link>}
+            </dd>
+          </div>
+          <div className="border-b border-border-subtle px-5 py-4 sm:border-b-0 sm:border-r">
+            <dt className="text-xs font-medium text-line">Next milestone</dt>
+            <dd className="mt-1 font-semibold text-paper">
+              <Link to="/roadmap" className="decoration-highlight underline-offset-4 hover:underline">
+                {data?.next_milestone ?? 'Finish setting up your profile'}
+              </Link>
+            </dd>
+          </div>
+          <div className="px-5 py-4">
+            <dt className="text-xs font-medium text-line">Unread notifications</dt>
+            <dd className="mt-1 font-semibold tabular-nums text-paper">{data?.unread_notifications_count ?? 0}</dd>
+          </div>
+        </dl>
+
+        {/* Readiness + measurements */}
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]" aria-label="Progress">
+          <div className="sheet flex flex-col p-6 sm:p-7">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-line">Placement readiness</h2>
+                <p className="type-display mt-4 text-[4.25rem] tabular-nums text-paper">
+                  {isLoading ? '–' : readinessShown}
+                  <span className="ml-1 text-3xl text-line">%</span>
+                </p>
+                <p className="mt-1 text-lg font-semibold text-paper">{getReadinessLabel(readiness)}</p>
               </div>
-              <div className="mt-3 flex flex-wrap gap-1">
+              {/* Readiness as a building: one floor per twelfth, the next floor highlighted. */}
+              <div className="-my-3 -mr-3 h-44 w-36 shrink-0 sm:h-48 sm:w-44">
+                {!isLoading && (
+                  <PlanModel
+                    progress={readiness / 100}
+                    variant="compact"
+                    label={`Your readiness drawn as a 12-floor tower: ${Math.round((readiness / 100) * 12)} floors built.`}
+                    className="h-full w-full"
+                  />
+                )}
+              </div>
+            </div>
+
+            <ReadinessScale value={isLoading ? 0 : readiness} />
+
+            <p className="mt-5 text-sm leading-relaxed text-line">
+              Half of this comes from coding problems solved, half from this week&rsquo;s plan.
+            </p>
+            <button type="button" onClick={() => navigate('/planner')} className={`${btnOutline} mt-6`}>
+              Open weekly planner
+            </button>
+          </div>
+
+          <div className="sheet grid grid-cols-1 sm:grid-cols-2">
+            <Measure
+              label="Coding problems solved"
+              to="/interview-hub/dsa"
+              pct={dsaPercent}
+              hint="Pick a topic and difficulty to keep this moving."
+              className="border-b border-border-subtle sm:border-r"
+            >
+              <Figure value={stats.dsa_solved} of={`of ${targetDsa.toLocaleString('en-IN')}`} />
+            </Measure>
+
+            <Measure
+              label="Subject confidence"
+              to="/subjects"
+              className="border-b border-border-subtle"
+            >
+              {subjectTotal > 0 ? (
+                <Figure value={confidentCount} of={`of ${subjectTotal} confident`} />
+              ) : (
+                <p className="text-lg font-semibold text-paper">Not rated yet</p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-1.5">
                 {subjectList.length > 0 ? (
                   subjectList.slice(0, 6).map((s) => (
-                    <span
-                      key={s.skill_key}
-                      className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-md border ${s.confidence >= 70
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                          : s.confidence >= 40
-                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                            : 'bg-red-500/10 text-red-400 border-red-500/20'
-                        }`}
-                    >
+                    <span key={s.skill_key} className="inline-flex items-center gap-1.5 rounded-full border border-border-subtle px-2 py-0.5 text-[0.72rem] text-paper">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${s.confidence >= 70 ? 'bg-success' : s.confidence >= 40 ? 'bg-warning' : 'bg-redline'}`}
+                        aria-hidden="true"
+                      />
                       {s.label}
                     </span>
                   ))
                 ) : (
-                  <span className="text-[10px] text-on-surface-variant">Complete onboarding to see subject scores</span>
+                  <span className="text-[0.8rem] text-line">Rate your subjects to see where you stand.</span>
                 )}
               </div>
-            </div>
+            </Measure>
 
-            {/* KPI Card 3: Weekly Progress */}
-            <div className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect">
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Weekly Tasks</span>
-                  <p className="text-2xl font-bold text-on-surface mt-1">
-                    {stats.weekly_tasks_completed} <span className="text-xs text-on-surface-variant">/ {stats.weekly_tasks_total}</span>
-                  </p>
-                </div>
-                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-tertiary-fixed-dim/10 text-tertiary-fixed-dim">
-                  <ClipboardList className="h-4 w-4" />
-                </div>
-              </div>
-              <div className="mt-4 space-y-1">
-                <div className="w-full bg-surface-container-high rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-tertiary-fixed-dim h-full rounded-full transition-all duration-500" style={{ width: `${weeklyTaskPercent}%` }}></div>
-                </div>
-                <span className="text-[10px] text-on-surface-variant block">Keep planning tasks updated to track growth</span>
-              </div>
-            </div>
-
-            {/* KPI Card 4: Quiz Accuracy */}
-            <div
-              className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect cursor-pointer"
-              onClick={() => navigate('/interview-hub/quiz')}
-              title="Go to Quiz Engine"
+            <Measure
+              label="This week’s tasks"
+              to="/planner"
+              pct={weeklyTaskPercent}
+              hint="From your active weekly plan."
+              className="border-b border-border-subtle sm:border-b-0 sm:border-r"
             >
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Quiz Accuracy</span>
-                  {quizAttempted > 0 ? (
-                    <p className="text-2xl font-bold text-on-surface mt-1">
-                      {quizAccuracy}% <span className="text-xs text-on-surface-variant">accuracy</span>
-                    </p>
-                  ) : (
-                    <p className="text-sm text-on-surface-variant mt-2">No quizzes yet</p>
-                  )}
-                </div>
-                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-warning/10 text-warning">
-                  <BarChart2 className="h-4 w-4" />
-                </div>
-              </div>
-              <div className="mt-4 space-y-1">
-                <div className="w-full bg-surface-container-high rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-warning h-full rounded-full transition-all duration-500" style={{ width: `${quizAccuracy}%` }}></div>
-                </div>
-                {quizAttempted > 0 ? (
-                  <span className="text-[10px] text-on-surface-variant block">
-                    {quizCorrect} correct of {quizAttempted} attempted
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-on-surface-variant block">Take a quiz to start tracking accuracy</span>
-                )}
-              </div>
-            </div>
+              <Figure value={stats.weekly_tasks_completed} of={`of ${stats.weekly_tasks_total} done`} />
+            </Measure>
 
+            <Measure
+              label="Quiz accuracy"
+              to="/interview-hub/quiz"
+              pct={quizAttempted > 0 ? quizAccuracy : null}
+              hint={quizAttempted > 0 ? `${quizCorrect} correct of ${quizAttempted} answered` : 'Take a quiz to start tracking accuracy.'}
+            >
+              {quizAttempted > 0 ? (
+                <Figure value={quizAccuracy} suffix="%" />
+              ) : (
+                <p className="text-lg font-semibold text-paper">No quizzes yet</p>
+              )}
+            </Measure>
           </div>
-        </div>
+        </section>
 
-        {/* Today's Focus Grid - Full Width */}
-        <div className="mt-2">
-          {/* Interactive Checklist */}
-          <div className="w-full bg-surface-card border border-border-subtle rounded-2xl p-6 flex flex-col justify-between">
-            <div>
-              <div className="flex justify-between items-center border-b border-border-subtle/40 pb-3 mb-4">
-                <h3 className="text-sm font-semibold text-on-surface">Today's Focus Tasks</h3>
-                <span className="text-xs text-on-surface-variant font-medium">
-                  {focusItems.filter((i) => i.completed).length} / {focusItems.length} Completed
-                </span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-75 overflow-y-auto pr-2 no-scrollbar">
-                {focusItems.map((item) => (
-                  <div
-                    key={item.id} onClick={() => handleToggleTask(item.id)}
-                    className={`flex items-center gap-3 p-3 rounded-xl border border-border-subtle/50 hover:bg-surface-container-low transition-all cursor-pointer ${item.completed ? "opacity-60 bg-surface-container/40" : ""
-                      }`}
+        {/* Today's focus */}
+        <section className="sheet" aria-labelledby="focus-heading">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle px-5 py-4 sm:px-6">
+            <h2 id="focus-heading" className="type-title text-xl text-paper">Today&rsquo;s focus</h2>
+            {focusItems.length > 0 && (
+              <p className="text-sm tabular-nums text-line">{focusDone} of {focusItems.length} done</p>
+            )}
+          </div>
+
+          {focusItems.length === 0 ? (
+            <p className="px-5 py-7 leading-relaxed text-line sm:px-6">
+              Nothing scheduled for today yet. Add a task below, or generate this week&rsquo;s plan in the{' '}
+              <Link to="/planner" className="text-paper underline decoration-highlight underline-offset-4">weekly planner</Link>.
+            </p>
+          ) : (
+            <ul className="grid max-h-[26rem] overflow-y-auto sm:grid-cols-2">
+              {focusItems.map((item) => (
+                <li key={item.id} className="border-b border-border-subtle sm:odd:border-r">
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={item.completed}
+                    onClick={() => handleToggleTask(item.id)}
+                    className="flex w-full cursor-pointer items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-paper/[0.04] sm:px-6"
                   >
-                    <button className="text-primary-fixed-dim transition-colors cursor-pointer shrink-0">
-                      {item.completed ? <CheckSquare className="w-4 h-4 fill-primary-fixed-dim/20" /> : <Square className="w-4 h-4" />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs text-on-surface font-medium truncate ${item.completed ? "line-through text-on-surface-variant" : ""}`}>
+                    <span
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors duration-200 ${
+                        item.completed ? 'border-highlight bg-highlight text-ink' : 'border-paper/50'
+                      } ${item.completed && justToggled === item.id ? 'success-ring' : ''}`}
+                      aria-hidden="true"
+                    >
+                      {item.completed && (
+                        <Check className={`h-3.5 w-3.5 ${justToggled === item.id ? 'pop-check' : ''}`} strokeWidth={3} />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="highlighter text-[0.95rem] font-medium text-paper" data-on={item.completed}>
                         {item.text}
-                      </p>
-                      <span className="text-[9px] bg-background-deep text-on-surface-variant border border-border-subtle font-bold tracking-wider px-1.5 py-0.5 rounded uppercase mt-1 inline-block">
-                        {item.category}
                       </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <form onSubmit={handleAddTask} className="mt-4 pt-4 border-t border-border-subtle/40 flex flex-col sm:flex-row items-center gap-2">
-              <input
-                type="text" required placeholder="Add immediate focus target..."
-                value={newItemText} onChange={(e) => setNewItemText(e.target.value)}
-                className="w-full flex-1 bg-surface-container border border-border-subtle rounded-lg py-2 px-3 text-xs text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary-fixed-dim transition-all"
-              />
-              <div className="flex w-full sm:w-auto gap-2">
-                <select
-                  value={newItemCategory} onChange={(e) => setNewItemCategory(e.target.value)}
-                  className="flex-1 sm:flex-none bg-surface-container border border-border-subtle rounded-lg py-2 px-2 text-[10px] font-bold text-on-surface-variant uppercase focus:outline-none cursor-pointer"
-                >
-                  <option value="DSA">DSA</option>
-                  <option value="DBMS">DBMS</option>
-                  <option value="OS">OS</option>
-                  <option value="System Design">SYS</option>
-                  <option value="Resume">CV</option>
-                </select>
-                <button type="submit" className="bg-primary-container hover:bg-primary-container/80 text-on-primary-fixed border border-primary-container/50 p-2 rounded-lg transition-colors cursor-pointer shrink-0">
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+                      <span className="mt-1 block text-xs text-line">{item.category}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
-        {/* Preparation Feature Navigation Grid */}
-        <div className="mt-2">
-          <h3 className="text-sm font-semibold text-on-surface mb-4">Preparation Modules</h3>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <form onSubmit={handleAddTask} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:px-6">
+            <label htmlFor="focus-task" className="sr-only">Add a task for today</label>
+            <input
+              id="focus-task"
+              type="text"
+              required
+              placeholder="Add a task for today"
+              value={newItemText}
+              onChange={(e) => setNewItemText(e.target.value)}
+              className="min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-container-lowest px-3.5 py-2.5 text-sm text-paper placeholder:text-line/70 transition-colors focus:border-highlight focus:outline-none"
+            />
+            <div className="flex gap-2">
+              <select
+                aria-label="Category"
+                value={newItemCategory}
+                onChange={(e) => setNewItemCategory(e.target.value)}
+                className="flex-1 cursor-pointer rounded-lg border border-border-subtle bg-surface-container-lowest px-3 py-2.5 text-sm text-paper focus:border-highlight focus:outline-none sm:flex-none"
+              >
+                <option value="DSA">DSA</option>
+                <option value="DBMS">DBMS</option>
+                <option value="OS">OS</option>
+                <option value="System Design">System design</option>
+                <option value="Resume">Resume</option>
+              </select>
+              <button type="submit" className={btnPrimary}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Add
+              </button>
+            </div>
+          </form>
+        </section>
+
+        {/* Tools index */}
+        <section aria-labelledby="tools-heading">
+          <h2 id="tools-heading" className="type-title text-xl text-paper">Your tools</h2>
+          <ul className="mt-4 grid border-t border-border-subtle sm:grid-cols-2 lg:grid-cols-4">
             {tileData.map((tile) => {
               const Icon = tile.icon;
-              const Wrapper = tile.link ? Link : 'div';
-              const wrapperProps = tile.link ? { to: tile.link } : {};
               return (
-                <Wrapper
-                  key={tile.title}
-                  {...wrapperProps}
-                  className="group flex flex-col justify-between rounded-2xl border border-border-subtle bg-surface-card p-5 shadow-sm transition hover:-translate-y-1 hover:border-outline cursor-pointer"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-xl"
-                      style={{ background: `${tile.color}15`, color: tile.color }}
-                    >
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    {tile.link ? (
-                      <ChevronRight className="h-4 w-4 text-on-surface-variant transition group-hover:text-on-surface group-hover:translate-x-0.5" />
-                    ) : (
-                      <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface-variant border border-border-subtle">Soon</span>
-                    )}
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-semibold text-on-surface">{tile.title}</h2>
-                    <p className="mt-1.5 text-xs leading-relaxed text-on-surface-variant line-clamp-2">{tile.text}</p>
-                  </div>
-                </Wrapper>
+                <li key={tile.title} className="border-b border-border-subtle">
+                  <Link
+                    to={tile.link}
+                    className="group flex h-full items-start gap-3 py-4 pr-4 transition-colors hover:bg-paper/[0.04] sm:px-4"
+                  >
+                    <Icon className="nudge-x mt-0.5 h-5 w-5 shrink-0 text-line transition-[color,transform] duration-200 group-hover:text-highlight" aria-hidden="true" />
+                    <span>
+                      <span className="block font-semibold text-paper">{tile.title}</span>
+                      <span className="mt-1 block text-sm leading-relaxed text-line">{tile.text}</span>
+                    </span>
+                  </Link>
+                </li>
               );
             })}
-          </div>
-        </div>
+          </ul>
+        </section>
 
-        {/* AI Mentor Call-to-Action Action Item Banner */}
-        <div className="mt-2 bg-linear-to-r from-primary-container/10 to-transparent border border-border-subtle rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-lg bg-primary-container/20 border border-primary-container/30 flex items-center justify-center text-primary-fixed-dim shrink-0">
-              <Sparkles className="w-5 h-5" />
-            </div>
+        {/* Mentor note */}
+        <aside className="flex flex-col gap-5 border-l-2 border-highlight bg-surface-card px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-4">
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-highlight" aria-hidden="true" />
             <div>
-              <h4 className="text-xs font-bold text-primary-fixed-dim uppercase tracking-wider">AI Mentor Insights &bull; Action Required</h4>
-              <p className="text-sm font-semibold text-on-surface mt-1">Ready for your next targeted interview session?</p>
-              <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed max-w-2xl">
-                Break down your comprehensive goals into structured milestones via the planner dashboard. For live mock review metrics, direct evaluation checks, and resume optimizations, chat with your AI Mentor.
+              <h2 className="font-semibold text-paper">Not sure what to work on next?</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-line">
+                The AI mentor can see your plan and progress. Ask it to explain a topic, look at your weak areas, or plan your next few days.
               </p>
             </div>
           </div>
-          <button
-            onClick={() => navigate("/mentor")}
-            className="bg-primary-container hover:bg-primary-container/80 text-shadow-primary-fixed-dim border-primary-container/30 font-semibold text-xs py-2.5 px-5 rounded-xl shrink-0 flex items-center gap-2 cursor-pointer transition-colors"
-          >
-            <Sparkles className="w-4 h-4" />
-            Chat with Mentor
+          <button type="button" onClick={() => navigate('/mentor')} className={`${btnPrimary} cursor-pointer`}>
+            Ask the mentor
           </button>
-        </div>
+        </aside>
 
       </div>
     </div>
   );
 }
 
+const btnPrimary =
+  'inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-highlight px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-primary-fixed active:translate-y-px';
+const btnGhost =
+  'inline-flex items-center gap-2 rounded-lg border border-border-subtle px-3.5 py-2 text-sm font-medium text-line transition-colors hover:border-outline hover:text-paper';
+const btnOutline =
+  'inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-paper/35 px-4 py-2.5 text-sm font-semibold text-paper transition-colors hover:border-paper/70 hover:bg-paper/5';
 
+/** Readiness drawn on a ruler: minor ticks every 10, major at 0 / 50 / 100. */
+function ReadinessScale({ value }) {
+  return (
+    <div className="mt-7" aria-hidden="true">
+      <div className="relative h-7">
+        <span
+          className="absolute -top-0.5 h-0 w-0 -translate-x-1/2 border-x-[6px] border-t-[8px] border-x-transparent border-t-highlight transition-[left] duration-700 ease-[var(--ease-draft)]"
+          style={{ left: `${value}%` }}
+        />
+        <div className="absolute inset-x-0 bottom-0 h-px bg-paper/50" />
+        {Array.from({ length: 11 }).map((_, i) => (
+          <span
+            key={i}
+            className={`absolute bottom-0 w-px bg-paper/50 ${i % 5 === 0 ? 'h-3.5' : 'h-2'}`}
+            style={{ left: `${i * 10}%` }}
+          />
+        ))}
+        <div
+          className="bar-grow absolute bottom-0 left-0 h-[3px] bg-highlight transition-[width] duration-700 ease-[var(--ease-draft)]"
+          style={{ width: `${value}%` }}
+        />
+      </div>
+      <div className="mt-1.5 flex justify-between text-[0.7rem] tabular-nums text-line">
+        <span>0</span>
+        <span>50</span>
+        <span>100</span>
+      </div>
+    </div>
+  );
+}
+
+/** A measured figure; numbers count up to their value when data arrives. */
+function Figure({ value, of, suffix = '' }) {
+  const shown = useCountUp(typeof value === 'number' ? value : 0, { active: typeof value === 'number' });
+  return (
+    <p className="flex flex-wrap items-baseline gap-x-2">
+      <span className="type-title text-[2rem] tabular-nums text-paper">
+        {typeof value === 'number' ? shown.toLocaleString('en-IN') : value}
+        {suffix}
+      </span>
+      {of && <span className="text-sm tabular-nums text-line">{of}</span>}
+    </p>
+  );
+}
+
+function Measure({ label, to, pct = null, hint, className = '', children }) {
+  return (
+    <Link to={to} className={`group flex flex-col p-5 transition-colors hover:bg-paper/[0.04] sm:p-6 ${className}`}>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-sm font-semibold text-line">{label}</h3>
+        <span className="nudge material-symbols-outlined text-[18px] text-line transition-[color,transform] duration-200 group-hover:text-paper" aria-hidden="true">
+          arrow_outward
+        </span>
+      </div>
+      <div className="mt-3 flex-1">{children}</div>
+      {pct != null && (
+        <div className="mt-4 h-[3px] w-full bg-paper/15">
+          <div className="bar-grow h-full bg-highlight transition-[width] duration-700 ease-[var(--ease-draft)]" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+        </div>
+      )}
+      {hint && <p className="mt-2.5 text-[0.8rem] leading-relaxed text-line">{hint}</p>}
+    </Link>
+  );
+}

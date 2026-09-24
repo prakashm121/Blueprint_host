@@ -367,7 +367,7 @@ export default function Profile() {
               <button
                 type="submit"
                 disabled={saving || !!cgpaError}
-                className="flex items-center gap-2 px-6 py-3 bg-primary text-white text-sm font-bold rounded-xl hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+                className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-sm font-bold rounded-xl hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
               >
                 <Save className="w-4 h-4" />
                 {saving ? 'Saving…' : 'Save Profile'}

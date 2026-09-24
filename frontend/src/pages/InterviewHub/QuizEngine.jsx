@@ -23,7 +23,7 @@ export default function QuizEngine() {
   const topic = searchParams.get('topic') || '';
   const difficulty = searchParams.get('difficulty') || '';
 
-  // â”€â”€ Machine states â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Machine states ──────────────────────────────────────────────────────
   const [quizStarted, setQuizStarted] = useState(false);
   const [questions, setQuestions] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -54,7 +54,7 @@ export default function QuizEngine() {
     setSearchParams(newParams);
   };
 
-  // â”€â”€ Fetch questions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Fetch questions ──────────────────────────────────────────────────────
   const startQuizSession = () => {
     setLoading(true);
     setError(null);
@@ -87,7 +87,7 @@ export default function QuizEngine() {
       .finally(() => setLoading(false));
   };
 
-  // â”€â”€ Timer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Timer ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!quizStarted || quizCompleted || questions.length === 0) return;
 
@@ -116,11 +116,11 @@ export default function QuizEngine() {
     setSelectedAnswers(prev => ({ ...prev, [currentIdx]: optionKey }));
   };
 
-  // â”€â”€ Server-side submission â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Server-side submission ───────────────────────────────────────────────
   /**
-   * Builds the answers payload from (questions Ã— selectedAnswers),
+   * Builds the answers payload from (questions × selectedAnswers),
    * POST to /quiz/attempt, and stores the server's per-question results.
-   * Questions with no selection are skipped â€” the server only evaluates
+   * Questions with no selection are skipped — the server only evaluates
    * what was actually answered.
    */
   const handleSubmitAttempt = (timedOut = false) => {
@@ -134,7 +134,7 @@ export default function QuizEngine() {
       .filter(a => a.selected_option !== null);
 
     if (answers.length === 0) {
-      // Nothing answered â€” show completed screen without a server call
+      // Nothing answered — show completed screen without a server call
       setQuizCompleted(true);
       return;
     }
@@ -149,12 +149,12 @@ export default function QuizEngine() {
         setQuizCompleted(true);
       })
       .catch(() => {
-        setSubmitError('Failed to sync results. Your answers are preserved â€” please retry.');
+        setSubmitError('Failed to sync results. Your answers are preserved — please retry.');
       })
       .finally(() => setSubmitting(false));
   };
 
-  // â”€â”€ Derived helpers for results view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Derived helpers for results view ────────────────────────────────────
   const resultMap = attemptResult
     ? Object.fromEntries(attemptResult.results.map(r => [r.quiz_id, r]))
     : {};
@@ -164,13 +164,13 @@ export default function QuizEngine() {
   const answeredCount = Object.keys(selectedAnswers).length;
   const unansweredCount = questions.length - answeredCount;
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="bg-background-deep text-on-surface font-body-base antialiased min-h-screen">
       <div className="flex flex-col min-h-screen">
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
 
-          {/* â”€â”€ SubHeader â”€â”€ */}
+          {/* ── SubHeader ── */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
             <div>
               <h2 className="text-2xl font-bold text-on-surface tracking-tight">Quiz Engine</h2>
@@ -180,7 +180,7 @@ export default function QuizEngine() {
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-            {/* â”€â”€ Primary Workspace â”€â”€ */}
+            {/* ── Primary Workspace ── */}
             <div className="lg:col-span-8 space-y-4">
 
               {error && (
@@ -218,7 +218,7 @@ export default function QuizEngine() {
                             }`}
                         >
                           <div className="flex items-center gap-3 mb-2">
-                            <div className={`p-2 rounded-lg transition-colors ${isActive ? 'bg-primary text-white' : 'bg-surface-container-high text-on-surface-variant group-hover:text-primary'}`}>
+                            <div className={`p-2 rounded-lg transition-colors ${isActive ? 'bg-primary text-on-primary' : 'bg-surface-container-high text-on-surface-variant group-hover:text-primary'}`}>
                               <span className="material-symbols-outlined text-lg block">{designConfig.icon}</span>
                             </div>
                             <h4 className="font-semibold text-xs text-on-surface">{secName}</h4>
@@ -253,7 +253,7 @@ export default function QuizEngine() {
                   </div>
 
                   <button onClick={startQuizSession}
-                    className="w-full py-3 bg-primary text-white text-xs font-bold rounded-xl hover:brightness-110 shadow-sm transition-all flex items-center justify-center gap-2">
+                    className="w-full py-3 bg-primary text-on-primary text-xs font-bold rounded-xl hover:brightness-110 shadow-sm transition-all flex items-center justify-center gap-2">
                     <span className="material-symbols-outlined text-base">rocket_launch</span>
                     Initialize Evaluation Session
                   </button>
@@ -277,11 +277,11 @@ export default function QuizEngine() {
                     </span>
                   </div>
 
-                  <h3 className="text-base font-semibold leading-relaxed text-on-surface">
+                  <h3 key={`q-${currentIdx}`} className="text-base font-semibold leading-relaxed text-on-surface" style={{ animation: 'list-in var(--dur-3) var(--ease-settle) backwards' }}>
                     {questions[currentIdx]?.question}
                   </h3>
 
-                  <div className="grid grid-cols-1 gap-2.5">
+                  <div key={`o-${currentIdx}`} className="stagger-list grid grid-cols-1 gap-2.5">
                     {[
                       { key: 'A', text: questions[currentIdx]?.option_a },
                       { key: 'B', text: questions[currentIdx]?.option_b },
@@ -296,7 +296,7 @@ export default function QuizEngine() {
                               : 'bg-surface-container-low border-border-subtle hover:border-primary/40 text-on-surface-variant hover:text-on-surface'
                             }`}
                         >
-                          <div className={`w-5 h-5 rounded-md font-bold flex items-center justify-center transition-colors shrink-0 text-[10px] ${isSelected ? 'bg-primary text-white' : 'bg-surface-container-high border border-border-subtle'
+                          <div key={isSelected ? 'on' : 'off'} className={`w-5 h-5 rounded-md font-bold flex items-center justify-center transition-colors shrink-0 text-[10px] ${isSelected ? 'pop bg-primary text-on-primary' : 'bg-surface-container-high border border-border-subtle'
                             }`}>
                             {opt.key}
                           </div>
@@ -327,7 +327,7 @@ export default function QuizEngine() {
 
                     {currentIdx < questions.length - 1 ? (
                       <button onClick={() => setCurrentIdx(prev => prev + 1)}
-                        className="px-5 py-2 bg-primary text-white text-xs font-bold rounded-xl hover:brightness-110 shadow-sm transition-all flex items-center gap-1.5">
+                        className="px-5 py-2 bg-primary text-on-primary text-xs font-bold rounded-xl hover:brightness-110 shadow-sm transition-all flex items-center gap-1.5">
                         Next Node <span className="material-symbols-outlined text-sm">arrow_forward</span>
                       </button>
                     ) : (
@@ -393,7 +393,7 @@ export default function QuizEngine() {
                     </div>
 
                     <button onClick={() => { setQuizStarted(false); setQuizCompleted(false); setAttemptResult(null); }}
-                      className="px-5 py-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white text-xs font-bold rounded-xl transition-all shadow-sm">
+                      className="px-5 py-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-on-primary text-xs font-bold rounded-xl transition-all shadow-sm">
                       Configure Another Track
                     </button>
                   </div>
@@ -465,8 +465,8 @@ export default function QuizEngine() {
                         <div className="flex flex-wrap gap-1.5 justify-center">
                           {attemptResult.results.map((r, idx) => (
                             <button key={idx} onClick={() => setReviewIdx(idx)}
-                              className={`w-6 h-6 rounded-md text-[10px] font-bold border transition-all flex items-center justify-center ${reviewIdx === idx
-                                  ? 'bg-primary border-primary text-white'
+                              className={`w-9 h-9 sm:w-6 sm:h-6 rounded-md text-xs sm:text-[10px] font-bold border transition-all flex items-center justify-center ${reviewIdx === idx
+                                  ? 'bg-primary border-primary text-on-primary'
                                   : r.is_correct
                                     ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                                     : !r.selected_option
@@ -497,7 +497,7 @@ export default function QuizEngine() {
               )}
             </div>
 
-            {/* â”€â”€ Sidebar â”€â”€ */}
+            {/* ── Sidebar ── */}
             <aside className="lg:col-span-4 space-y-4">
               <section className="bg-surface-container border border-border-subtle rounded-xl p-5 shadow-sm">
                 <div className="flex justify-between items-center mb-4">
@@ -524,8 +524,8 @@ export default function QuizEngine() {
                         const isAnswered = selectedAnswers[idx] !== undefined;
                         return (
                           <button key={idx} onClick={() => setCurrentIdx(idx)}
-                            className={`w-6 h-6 rounded-md text-[10px] font-bold border transition-all flex items-center justify-center ${isCurrent
-                                ? 'bg-primary border-primary text-white shadow-sm'
+                            className={`w-9 h-9 sm:w-6 sm:h-6 rounded-md text-xs sm:text-[10px] font-bold border transition-all flex items-center justify-center ${isCurrent
+                                ? 'bg-primary border-primary text-on-primary shadow-sm'
                                 : isAnswered
                                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                                   : 'bg-surface-container-low border-border-subtle text-on-surface-variant'

@@ -6,7 +6,8 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api';
 import { useAuthStore } from '../../store/authStore';
 import { supabase } from '../../lib/supabase';
-import { ArrowLeft, Send, Bot, Loader2, PlusCircle, Bookmark } from 'lucide-react';
+import { ArrowLeft, Send, Bot, Loader2, PlusCircle, Bookmark, BookmarkCheck, History } from 'lucide-react';
+import { usePresence } from '../../lib/motion';
 
 const SUGGESTIONS = [
   'How is my placement readiness?',
@@ -102,7 +103,7 @@ const AssistantMessage = React.memo(function AssistantMessage({ content, streami
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-primary-fixed-dim hover:underline"
+              className="text-primary-fixed-dim hover:underline [overflow-wrap:anywhere]"
             >
               {children}
             </a>
@@ -192,6 +193,7 @@ export default function Mentor() {
   };
   const [historyLoading, setHistoryLoading] = useState(true);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
+  const historySheet = usePresence(mobileHistoryOpen, 200);
   const bottomRef = useRef(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [savedMsgIds, setSavedMsgIds] = useState(new Set());
@@ -259,7 +261,7 @@ export default function Mentor() {
 
   const hasSentTeachRef = useRef(false);
 
-  // Handle ?teach= param â€” auto-send a teacher message after history loads, only once per session
+  // Handle ?teach= param — auto-send a teacher message after history loads, only once per session
   useEffect(() => {
     if (historyLoading || hasSentTeachRef.current) return;
     const teachTopic = searchParams.get('teach');
@@ -433,14 +435,14 @@ export default function Mentor() {
   };
 
 return (
-  <div className="h-screen bg-background-deep text-on-surface font-sans flex flex-col overflow-hidden w-full max-w-[100vw]">
+  <div className="h-full min-h-0 bg-background-deep text-on-surface font-sans flex flex-col overflow-hidden w-full max-w-[100vw]">
 
     {/* Top Nav */}
-    <div className="w-full border-b border-border-subtle/50 px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 bg-background-deep/80 backdrop-blur sticky top-0 z-10">
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full">
+    <div className="w-full border-b border-border-subtle/50 px-4 py-3 sm:py-4 flex flex-row items-center justify-between gap-3 bg-background-deep/80 backdrop-blur sticky top-0 z-10">
+      <div className="flex items-center gap-2">
         <Link
           to="/dashboard"
-          className="text-on-surface-variant hover:text-on-surface transition-colors p-2 rounded-lg hover:bg-surface-container"
+          className="inline-flex h-10 w-10 items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors rounded-lg hover:bg-surface-container"
           aria-label="Back to Dashboard"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -450,14 +452,14 @@ return (
         {/* Mobile-only history button */}
         <button
           onClick={() => setMobileHistoryOpen(true)}
-          className="md:hidden flex items-center gap-2 text-xs font-medium text-on-surface-variant border border-border-subtle bg-surface-card px-3 py-2 rounded-xl hover:border-outline hover:text-on-surface transition-all"
+          className="md:hidden flex min-h-10 items-center gap-2 text-xs font-medium text-on-surface-variant border border-border-subtle bg-surface-card px-3 py-2 rounded-xl hover:border-outline hover:text-on-surface transition-all"
         >
-          <PlusCircle className="w-4 h-4" />
+          <History className="w-4 h-4" aria-hidden="true" />
           History
         </button>
         <button
           onClick={startNewConversation}
-          className="flex items-center gap-2 text-xs font-medium text-on-surface-variant border border-border-subtle bg-surface-card px-3 py-2 rounded-xl hover:border-outline hover:text-on-surface transition-all"
+          className="flex min-h-10 items-center gap-2 text-xs font-medium text-on-surface-variant border border-border-subtle bg-surface-card px-3 py-2 rounded-xl hover:border-outline hover:text-on-surface transition-all"
         >
           <PlusCircle className="w-4 h-4" />
           New Chat
@@ -466,14 +468,14 @@ return (
     </div>
 
     {/* Main Interface */}
-    <div className="flex-1 w-full max-w-[1400px] mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-4 gap-6 min-h-0">
+    <div className="flex-1 w-full max-w-[1400px] mx-auto px-3 py-3 sm:px-4 sm:py-8 grid grid-cols-1 md:grid-cols-4 gap-6 min-h-0">
 
-      {/* Sidebar â€” desktop only */}
+      {/* Sidebar — desktop only */}
       <div className="hidden md:flex flex-col bg-surface-card border border-border-subtle rounded-2xl overflow-hidden shadow-2xl h-full">
         <div className="p-4 border-b border-border-subtle/40 bg-surface-container-low/30">
           <h3 className="text-sm font-bold text-on-surface">Past Conversations</h3>
         </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar">
+        <div className="stagger-list flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar">
           <button
             onClick={startNewConversation}
             className={`w-full text-left px-3 py-2.5 rounded-lg text-xs transition-colors truncate ${conversationId === null
@@ -523,7 +525,7 @@ return (
           <select
             value={selectedModel}
             onChange={(e) => setSelectedModel(e.target.value)}
-            className="text-[10px] text-on-surface-variant border border-border-subtle bg-surface-container-high px-2 py-1 rounded-full font-bold tracking-wider outline-none cursor-pointer hover:bg-surface-container-highest transition-colors appearance-none text-center max-w-[120px] sm:max-w-none truncate"
+            className="text-[10px] text-on-surface-variant border border-border-subtle bg-surface-container-high px-2.5 py-1 min-h-9 rounded-full font-bold tracking-wider outline-none cursor-pointer hover:bg-surface-container-highest transition-colors appearance-none text-center max-w-[120px] sm:max-w-none truncate"
           >
             <option value="">AUTO (GEMINI FLASH)</option>
             <option value="gemini-3.8-flash">GEMINI 3.8 FLASH</option>
@@ -536,25 +538,44 @@ return (
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar">
           {historyLoading && (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-5 h-5 animate-spin text-on-surface-variant" />
             </div>
           )}
 
-          {!historyLoading && messages.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-center opacity-60 mt-12">
-              <Bot className="w-12 h-12 text-on-surface-variant mb-4" />
-              <h3 className="text-lg font-semibold text-on-surface">How can I assist your prep today?</h3>
-              <p className="text-sm text-on-surface-variant mt-2 max-w-sm leading-relaxed">
-                Ask for system design help, algorithm hints, teaching explanations, or resume tips tailored to your profile.
+          {!historyLoading && messages.length === 0 && !loading && (
+            // Empty chat: the suggestions live here, inside the conversation, as things to ask.
+            <div className="flex min-h-full flex-col items-center justify-center py-4 text-center">
+              <Bot className="mb-4 h-11 w-11 text-on-surface-variant/70" aria-hidden="true" />
+              <h3 className="text-lg font-semibold text-on-surface">What should we work on today?</h3>
+              <p className="mt-2 max-w-sm text-sm leading-relaxed text-on-surface-variant">
+                Ask for a topic explained, hints on a problem, system design help or resume tips. I can see your plan and progress.
               </p>
+              <div className="mt-6 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
+                {SUGGESTIONS.map((s, i) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => sendMessage(s)}
+                    className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-border-subtle bg-surface-container-low px-4 py-3 text-left text-sm font-medium text-on-surface transition hover:border-outline hover:bg-surface-container"
+                    style={{ animation: `rise-in 0.45s var(--ease-settle) ${0.08 * i}s both` }}
+                  >
+                    <span className="material-symbols-outlined text-[18px] text-on-surface-variant" aria-hidden="true">chat_bubble</span>
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
           {messages.map((msg, i) => (
-            <div key={i} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div
+              key={i}
+              className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              style={{ animation: 'list-in var(--dur-3) var(--ease-settle) backwards' }}
+            >
               {msg.role === 'assistant' ? (
                 <div className="w-full border-l-2 border-primary-container/30 pl-5 py-2">
                   <AssistantMessage content={msg.content} />
@@ -563,13 +584,15 @@ return (
                     <button
                       onClick={() => handleSaveInsight(msg.content, i)}
                       disabled={savedMsgIds.has(i)}
-                      className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${savedMsgIds.has(i)
+                      className={`-ml-1 flex min-h-9 items-center gap-1.5 rounded-md px-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${savedMsgIds.has(i)
                           ? 'text-amber-400'
                           : 'text-on-surface-variant/50 hover:text-amber-400'
                         }`}
                     >
-                      <Bookmark className="w-3.5 h-3.5" />
-                      {savedMsgIds.has(i) ? 'Saved to Vault' : 'Save Insight'}
+                      {savedMsgIds.has(i)
+                        ? <BookmarkCheck className="pop w-3.5 h-3.5" />
+                        : <Bookmark className="w-3.5 h-3.5" />}
+                      {savedMsgIds.has(i) ? 'Saved to vault' : 'Save insight'}
                     </button>
                     )}
                     <div className="text-[10px] text-on-surface-variant/40 font-mono uppercase">
@@ -608,29 +631,14 @@ return (
           <div ref={bottomRef} className="h-4" />
         </div>
 
-        {/* Suggestions + Input */}
-        <div className="p-5 border-t border-border-subtle/40 bg-surface-container-low/30">
-          {messages.length === 0 && !historyLoading && (
-            <div className="flex flex-wrap gap-2.5 mb-4">
-              {SUGGESTIONS.map(s => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => sendMessage(s)}
-                  className="rounded-full border border-border-subtle bg-surface-container-low px-4 py-1.5 text-xs font-medium text-on-surface-variant transition hover:border-primary-fixed-dim/50 hover:text-on-surface hover:bg-surface-container cursor-pointer"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-
+        {/* Input */}
+        <div className="p-3 sm:p-5 border-t border-border-subtle/40 bg-surface-container-low/30">
           <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="relative flex items-center">
             <input
               type="text"
               value={input}
               onChange={e => setInput(e.target.value)}
-              placeholder='Ask anything â€” or try "Teach me Graphs"'
+              placeholder='Ask anything — or try "Teach me Graphs"'
               className="w-full bg-background-deep border border-border-subtle rounded-full py-3.5 pl-6 pr-14 text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none transition-all focus:border-primary-fixed-dim/60 focus:bg-surface-container-low"
               disabled={loading || historyLoading}
             />
@@ -648,14 +656,16 @@ return (
     </div>
 
     {/* Mobile history bottom-sheet */}
-    {mobileHistoryOpen && (
-      <div
-        className="md:hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end"
-        onClick={() => setMobileHistoryOpen(false)}
-      >
+    {historySheet.mounted && (
+      <div className="md:hidden fixed inset-0 z-50 flex items-end" role="dialog" aria-modal="true" aria-label="Conversations">
         <div
-          className="w-full bg-surface-card border-t border-border-subtle rounded-t-2xl max-h-[65vh] flex flex-col"
-          onClick={(e) => e.stopPropagation()}
+          className={`absolute inset-0 bg-black/50 backdrop-blur-sm ${historySheet.closing ? 'backdrop-out' : 'backdrop-in'}`}
+          onClick={() => setMobileHistoryOpen(false)}
+        />
+        <div
+          className={`as-sheet relative w-full bg-surface-card border-t border-border-subtle rounded-t-2xl max-h-[65vh] flex flex-col ${
+            historySheet.closing ? 'dialog-out pointer-events-none' : 'dialog-in'
+          }`}
         >
           <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle shrink-0">
             <h3 className="font-bold text-on-surface text-sm">Conversations</h3>
