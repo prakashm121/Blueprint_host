@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import json
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
@@ -192,27 +193,22 @@ def submit_role_skills(
         category = get_category_for_key(role, skill_key)
         skill_type = "subject" if category == "Core Subjects" else ("dsa" if category == "DSA" else "role_specific")
 
-        existing = (
-            db.query(UserSkillAssessment)
-            .filter(
-                UserSkillAssessment.user_id == current_user.id,
-                UserSkillAssessment.role == role,
-                UserSkillAssessment.skill_key == skill_key,
-            )
-            .first()
-        )
-        if existing:
-            existing.self_rated_confidence = conf
-        else:
-            db.add(UserSkillAssessment(
+        # Atomic upsert: concurrent/repeated submits must not race into the unique constraint.
+        db.execute(
+            pg_insert(UserSkillAssessment)
+            .values(
                 user_id=current_user.id,
                 skill_key=skill_key,
                 skill_type=skill_type,
                 category=category,
                 role=role,
                 self_rated_confidence=conf,
-            ))
-            db.flush()
+            )
+            .on_conflict_do_update(
+                constraint="uq_usa_user_role_skill",
+                set_={"self_rated_confidence": conf},
+            )
+        )
 
     current_user.onboarding_step = "generate_roadmap"
     db.commit()
@@ -271,11 +267,10 @@ async def generate_roadmap(
     # Call AI â€” falls back to hardcoded milestones on failure
     ai_milestones = await generate_role_roadmap_async(
         target_role=target_role,
+        prep_stage=preparation_status,
         weak_areas=weak_areas,
-        target_companies=target_companies,
-        preparation_status=preparation_status,
     )
-    milestone_dicts = ai_milestones if ai_milestones else _FALLBACK_MILESTONES
+    milestone_dicts = [m.model_dump() for m in ai_milestones] if ai_milestones else _FALLBACK_MILESTONES
 
     # Delete any existing roadmap for this user (re-onboarding support)
     db.query(RoleRoadmap).filter(RoleRoadmap.user_id == current_user.id).delete()
