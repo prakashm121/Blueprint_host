@@ -43,6 +43,11 @@ function App() {
   const setAuthLoading = useAuthStore((state) => state.setAuthLoading);
 
   useEffect(() => {
+    // Render's free tier sleeps after 15 min idle; wake the API on every visit so it's warm by the time the user needs it.
+    fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/health`, { mode: 'no-cors' }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
