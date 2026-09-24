@@ -6,6 +6,7 @@ Not part of the public API surface: every route here is guarded by a
 shared secret (X-Internal-Secret header) checked against
 settings.INTERNAL_TRIGGER_SECRET, not by user auth.
 """
+import hmac
 import logging
 
 from fastapi import APIRouter, Header, HTTPException
@@ -21,7 +22,9 @@ router = APIRouter()
 def _verify_internal_secret(x_internal_secret: str | None) -> None:
     if not settings.INTERNAL_TRIGGER_SECRET:
         raise HTTPException(status_code=503, detail="Internal trigger secret is not configured")
-    if not x_internal_secret or x_internal_secret != settings.INTERNAL_TRIGGER_SECRET:
+    if not x_internal_secret or not hmac.compare_digest(
+        x_internal_secret.encode(), settings.INTERNAL_TRIGGER_SECRET.encode()
+    ):
         raise HTTPException(status_code=401, detail="Invalid or missing internal secret")
 
 

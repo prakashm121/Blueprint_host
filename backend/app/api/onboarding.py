@@ -17,6 +17,8 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.assessment import UserSkillAssessment
 from app.models.roadmap import RoleRoadmap, RoadmapMilestone
+from app.core.config import settings
+from app.core.rate_limit import enforce_daily
 from app.services.notification_service import notify_welcome
 from app.services.roadmap.service import generate_role_roadmap_async
 from app.core.role_skills import ROLE_ASSESSMENT_SKILLS, get_key_to_label, get_category_for_key, get_valid_keys
@@ -242,6 +244,11 @@ async def generate_roadmap(
     Calls the AI synchronously, persists milestones, marks onboarding complete,
     and returns the result in a single HTTP response.
     """
+    enforce_daily(
+        "roadmap_generation", current_user.id, settings.ROADMAP_GENERATIONS_PER_DAY,
+        "Roadmap generation limit reached for today. Try again tomorrow.",
+    )
+
     target_role = current_user.target_role or "Software Engineer"
     target_companies: list[str] = []
     if current_user.target_companies:

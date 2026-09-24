@@ -318,6 +318,14 @@ export default function Mentor() {
 
     if (!streamRes.ok) {
       const errText = await streamRes.text();
+      if (streamRes.status === 429) {
+        // Rate/quota limit: show the server's explanation instead of a generic failure.
+        let limitMessage = 'You are sending messages too quickly. Please try again later.';
+        try { limitMessage = JSON.parse(errText).detail || limitMessage; } catch { /* keep default */ }
+        const limitError = new Error(limitMessage);
+        limitError.userMessage = limitMessage;
+        throw limitError;
+      }
       throw new Error(`Stream error ${streamRes.status}: ${errText}`);
     }
 
@@ -401,7 +409,7 @@ export default function Mentor() {
     setStreamingContent('');
     setMessages(prev => [...prev, {
       role: 'assistant',
-      content: 'Sorry, I could not respond right now. Please try again.',
+      content: err.userMessage || 'Sorry, I could not respond right now. Please try again.',
       timestamp: new Date().toISOString(),
     }]);
   } finally {
@@ -523,7 +531,7 @@ return (
             <option value="gemini-3.6-flash">GEMINI 3.6 FLASH</option>
             <option value="gemini-3.5-flash">GEMINI 3.5 FLASH</option>
             <option value="gemini-2.5-flash">GEMINI 2.5 FLASH</option>
-            <option value="gemini-1.5-flash">GEMINI 1.5 FLASH</option>
+            <option value="gemini-2.5-flash-lite">GEMINI 2.5 FLASH LITE</option>
           </select>
         </div>
 

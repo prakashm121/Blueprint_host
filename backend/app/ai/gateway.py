@@ -31,6 +31,13 @@ class AIGateway:
             return getattr(settings, "GEMINI_ROADMAP_MODELS", ["gemini-3.5-flash"])
         return getattr(settings, "GEMINI_LIGHT_MODELS", ["gemini-3.5-flash-lite"])
 
+    def _resolve_models(self, task: str, model_override: Optional[str] = None) -> list[str]:
+        """The task's fallback chain; a requested model is tried first but never replaces the chain."""
+        chain = list(self._get_model_chain(task))
+        if model_override:
+            return [model_override] + [m for m in chain if m != model_override]
+        return chain
+
     async def generate(
         self,
         task: str,
@@ -59,10 +66,7 @@ class AIGateway:
             
         timeout_s = timeout or default_timeout
         
-        if model_override:
-            models = [model_override]
-        else:
-            models = self._get_model_chain(task)
+        models = self._resolve_models(task, model_override)
             
         config_kwargs = {
             "temperature": settings.GEMINI_TEMPERATURE,
@@ -177,10 +181,7 @@ class AIGateway:
         else:
             max_tokens = settings.GEMINI_MAX_TOKENS
 
-        if model_override:
-            models = [model_override]
-        else:
-            models = self._get_model_chain(task)
+        models = self._resolve_models(task, model_override)
 
         config = genai.types.GenerateContentConfig(
             temperature=settings.GEMINI_TEMPERATURE,

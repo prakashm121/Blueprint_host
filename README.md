@@ -17,6 +17,7 @@ Blueprint is an AI-powered platform that helps engineering students systematical
 - [Quick start](#quick-start)
 - [Environment variables](#environment-variables)
 - [Deployment](#deployment)
+- [Security & rate limits](#security--rate-limits)
 - [Known gaps](#known-gaps)
 - [Platform screenshots](#platform-screenshots)
 - [Contributing](#contributing)
@@ -36,7 +37,7 @@ Blueprint is an AI-powered platform that helps engineering students systematical
 | Interview Hub — Quiz | 5,816 MCQs, per-user attempt history | Live |
 | AI Mentor | Gemini-backed streaming chat (Teacher/Mentor modes), deterministic intent routing | Live |
 | Knowledge Vault | Bookmarks, AI insights, and personal notes | Live |
-| Resume Analysis | Async PDF extraction + Gemini ATS scoring with a deterministic (non-AI) final score, section + factor breakdown | Live |
+| Resume Analysis | Async PDF extraction + Gemini ATS scoring with a deterministic (non-AI) final score, section + factor breakdown. Re-uploading the same file returns the existing analysis for free; one new file per day | Live |
 | In-app notifications | Planner reminders, written directly to the DB (no email) | Live |
 | Email delivery | — | **Not built** (see [Known gaps](#known-gaps)) |
 | GitHub activity analysis | — | Planned |
@@ -184,9 +185,25 @@ See the full, verified lists in [`backend/README.md`](./backend/README.md#enviro
 - **Frontend**: Vercel, auto-deploy from `main`.
 - **Backend**: one Render free Web Service running `start.sh` (`uvicorn` + Celery worker — no Beat, no Background Worker service, no Dockerfile).
 - **Redis**: Upstash free tier, doubling as the Celery broker and the app-level response cache.
-- **Scheduler**: GitHub Actions (`.github/workflows/planner-reminders.yml`), hourly, hits a shared-secret-protected internal endpoint on the backend — replaces what Celery Beat used to do, at zero additional hosting cost.
+- **Scheduler**: GitHub Actions (`.github/workflows/planner-reminders.yml`), hourly, hits a shared-secret-protected internal endpoint on the backend — replaces what Celery Beat used to do, at zero additional hosting cost. Needs repo secrets `RENDER_APP_URL` and `INTERNAL_TRIGGER_SECRET`; the job has no token permissions and retries for a few minutes because the free-tier backend is usually asleep at the top of the hour.
+- **Render env**: set `APP_ENV=production` (disables the public API docs). Free-tier cold starts (~1 min after 15 min idle) are softened by a wake-up ping the frontend sends on every page load.
 
 This shape was deliberately chosen to stay within free tiers without running multiple always-on services — see the commit history / PR discussion around the Celery Beat removal for the full reasoning if you're revisiting this later.
+
+---
+
+## Security & rate limits
+
+**Rate limits** (per user unless noted; day = IST midnight; all configurable via env vars — details in [`backend/README.md`](./backend/README.md#rate-limiting)):
+
+| Feature | Limit |
+|---|---|
+| AI Mentor | 40 messages per conversation, 60 per day, 6 per minute; 4,000-char messages |
+| Resume | same file re-uploaded = free reuse of the existing analysis; 1 new file per day |
+| Planner / roadmap (Gemini) | 6 daily plans, 5 weekly plans, 5 roadmap generations per day |
+| Whole API | 600 requests/minute per IP (flood guard) |
+
+**Security posture** (full list in [`backend/README.md`](./backend/README.md#security)): Supabase token verified server-side with a 60-second cache; bearer-header auth only (no auth cookie); every ID-based endpoint scoped to the current user; upload validation (PDF magic bytes, size cap, sanitised names); TLS verification on Redis; constant-time internal-secret check; API docs off in production; DOMPurify + security headers on the frontend. The one thing to verify yourself: **Supabase row-level security** on the tables the frontend reads directly (only 5 have policies defined in this repo).
 
 ---
 
@@ -198,6 +215,8 @@ Tracked honestly rather than hidden:
 - **No email delivery is implemented anywhere**, despite some legacy scaffolding (`SMTP_*` env vars, an unused transactional outbox) suggesting otherwise. All notifications are in-app only.
 - **The outbox pattern (`OutboxEvent` table, handlers, event types) is intentionally dormant** — kept for a future feature that needs real at-least-once delivery around an external call, but has zero live callers today.
 - **`backend/scratch_seed_data.py` hardcodes a stale path** to a differently-named local clone of this repo.
+- **No Content-Security-Policy** header on the frontend yet (needs browser testing), and no dependency lockfile on the backend.
+- **Supabase RLS coverage is unverified** for most tables that the frontend reads directly — check the Security Advisor in the Supabase dashboard.
 - Two frontend data-fetching paths (backend API vs. direct Supabase reads) coexist without a single documented rule for new features — see `frontend/README.md`.
 
 ---

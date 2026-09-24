@@ -9,7 +9,7 @@ Note: The old GET /api/v1/profile/roadmap endpoint was removed in Phase 4.
 """
 import json
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
@@ -27,25 +27,33 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 class ProfileUpdateRequest(BaseModel):
-    # Academic
-    full_name: Optional[str] = None
-    college_name: Optional[str] = None
-    degree: Optional[str] = None
-    specialization: Optional[str] = None
+    # Academic (max lengths match the DB column sizes)
+    full_name: Optional[str] = Field(None, max_length=120)
+    college_name: Optional[str] = Field(None, max_length=200)
+    degree: Optional[str] = Field(None, max_length=100)
+    specialization: Optional[str] = Field(None, max_length=100)
     graduation_year: Optional[int] = None
     cgpa: Optional[float] = Field(None, ge=0.0, le=10.0)
 
     # Career goals — these live on the User model, not Profile
-    target_role: Optional[str] = None
-    target_companies: Optional[List[str]] = None   # replaces the full list
+    target_role: Optional[str] = Field(None, max_length=100)
+    target_companies: Optional[List[str]] = Field(None, max_length=10)   # replaces the full list
     preparation_status: Optional[str] = None       # not_started | early | mid | final_stretch
 
     # Contact / social
-    phone_number: Optional[str] = None
-    linkedin_url: Optional[str] = None
-    github_username: Optional[str] = None
-    bio: Optional[str] = None
-    avatar_url: Optional[str] = None
+    phone_number: Optional[str] = Field(None, max_length=20)
+    linkedin_url: Optional[str] = Field(None, max_length=500)
+    github_username: Optional[str] = Field(None, max_length=100)
+    bio: Optional[str] = Field(None, max_length=2000)
+    avatar_url: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("linkedin_url", "avatar_url")
+    @classmethod
+    def _http_urls_only(cls, v: Optional[str]) -> Optional[str]:
+        # Empty string clears the field; anything else must be http(s) (blocks javascript:/data: URLs).
+        if v and not v.lower().startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v
 
 
 def _profile_response(profile: ProfileModel, user: User) -> dict:

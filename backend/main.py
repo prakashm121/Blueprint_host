@@ -1,12 +1,15 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.api import auth, profile, planner, onboarding, mentor, notifications, hub, vault, assessments, roadmap, resume, internal
+from app.api.deps import get_current_active_user
+from app.core.rate_limit import RateLimitMiddleware
+from app.models.user import User
 from app.db.session import init_db
 from app.workers.outbox import outbox_stats
 
@@ -21,11 +24,24 @@ async def lifespan(app: FastAPI):
     logger.info("PlacementOS API shutting down")
 
 
+_is_production = settings.APP_ENV.lower() == "production"
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="0.1.0",
     description="PlacementOS API — Celery worker architecture",
     lifespan=lifespan,
+    # Interactive docs / schema are disabled in production (set APP_ENV=production).
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
+)
+
+# Added before CORS so CORS stays outermost and 429 responses still carry CORS headers.
+app.add_middleware(
+    RateLimitMiddleware,
+    limit=settings.GLOBAL_RATE_LIMIT_PER_MINUTE,
+    exempt_paths=("/health", "/", f"{settings.API_V1_STR}/internal/scan-planner-reminders"),
 )
 
 app.add_middleware(
@@ -64,8 +80,8 @@ def api_status():
     return {"api": settings.PROJECT_NAME, "version": "v1"}
 
 @app.get(f"{settings.API_V1_STR}/status/workers")
-def worker_status():
-    """Ops endpoint — outbox backlog and worker mode."""
+def worker_status(_user: User = Depends(get_current_active_user)):
+    """Ops endpoint — outbox backlog and worker mode (authenticated)."""
     return {"success": True, "data": outbox_stats()}
 
 @app.get(f"{settings.API_V1_STR}/placements")

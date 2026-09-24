@@ -14,7 +14,7 @@ if settings.REDIS_URL:
     try:
         kwargs = {"decode_responses": True}
         if settings.REDIS_URL.startswith("rediss://"):
-            kwargs["ssl_cert_reqs"] = "none"
+            kwargs["ssl_cert_reqs"] = "required"
         redis_client = redis.Redis.from_url(settings.REDIS_URL, **kwargs)
         redis_client.ping()
     except Exception as e:

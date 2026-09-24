@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from app.api import deps
-from app.core.cache import get_cache, set_cache, delete_cache, redis_client
+from app.core.cache import get_cache, set_cache, delete_cache
+from app.core.config import settings
+from app.core.rate_limit import enforce_daily
 from app.db.session import get_db
 from app.models.user import User
 from app.models.planner import WeeklyPlan, PlannerTask
@@ -119,16 +121,6 @@ async def get_daily_plan(
         if cached:
             return cached
 
-    # Rate-limit regenerations only when a successful plan already exists
-    if get_cache(cache_key) and redis_client:
-        regen_key = f"planner:daily:regen:{current_user.id}:{today_str}"
-        count = redis_client.incr(regen_key)
-        if count == 1:
-            midnight = datetime.combine(date.today() + timedelta(days=1), datetime.min.time())
-            redis_client.expire(regen_key, max(int((midnight - datetime.utcnow()).total_seconds()), 1))
-        if count > 3:
-            raise HTTPException(429, "Daily plan regeneration limit reached. Try again tomorrow.")
-
     ctx = build_daily_planner_context(db, current_user, body.available_minutes, body.custom_tasks)
 
     task_titles = body.custom_tasks.copy()
@@ -143,6 +135,11 @@ async def get_daily_plan(
             skipped.append(t["title"])
 
     if task_titles:
+        # Every Gemini call for the daily plan counts (cache hits above are free).
+        enforce_daily(
+            "planner_daily", current_user.id, settings.PLANNER_DAILY_AI_PER_DAY,
+            "Daily plan generation limit reached. Try again tomorrow.",
+        )
         schedule = await generate_daily_breakdown_async(task_titles, body.available_minutes)
         if schedule:
             # Assign fake IDs to AI sub-tasks so frontend keys/checkboxes work.
@@ -221,6 +218,11 @@ async def create_plan(
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
+    enforce_daily(
+        "planner_weekly", current_user.id, settings.PLANNER_WEEKLY_AI_PER_DAY,
+        "Weekly plan generation limit reached. Try again tomorrow.",
+    )
+
     existing = (
         db.query(WeeklyPlan)
         .filter(WeeklyPlan.user_id == current_user.id, WeeklyPlan.status == "active")

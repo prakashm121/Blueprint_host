@@ -1,61 +1,88 @@
-﻿from fastapi import Depends, HTTPException, status, Cookie, Security
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt
-from sqlalchemy.orm import Session
-from functools import lru_cache
+import hashlib
+import logging
+import threading
+import time
+
 import requests
+from fastapi import Depends, HTTPException, status, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
 
+logger = logging.getLogger("placementos.auth")
+
 security = HTTPBearer(auto_error=False)
 
-@lru_cache(maxsize=1000)
+# Verified-token cache: short TTL so sign-out / revocation / bans in Supabase take effect quickly.
+_TOKEN_CACHE_TTL_SECONDS = 60
+_TOKEN_CACHE_MAX_ENTRIES = 1000
+_token_cache: dict[str, tuple[float, dict]] = {}
+_token_cache_lock = threading.Lock()
+
+
 def verify_supabase_token_with_api(token: str) -> dict:
     """
-    Verifies a Supabase JWT (especially ES256 asymmetric ones) by calling the Supabase Auth API.
-    We use lru_cache so we only take the network hit once per token per application lifecycle.
+    Verifies a Supabase JWT (including ES256 asymmetric ones) by calling the Supabase Auth API.
+    Successful results are cached for a short TTL, keyed by a hash of the token.
     """
-    headers = {
-        "apikey": "sb_publishable_Rf2TcAUwPhvVSSBP6J73MQ_LzRNLoL6", # Using frontend anon key for now
-        "Authorization": f"Bearer {token}"
-    }
-    url = f"{settings.SUPABASE_URL}/auth/v1/user"
-    resp = requests.get(url, headers=headers)
+    key = hashlib.sha256(token.encode()).hexdigest()
+    now = time.monotonic()
+
+    with _token_cache_lock:
+        cached = _token_cache.get(key)
+        if cached and cached[0] > now:
+            return cached[1]
+
+    resp = requests.get(
+        f"{settings.SUPABASE_URL}/auth/v1/user",
+        headers={
+            "apikey": settings.SUPABASE_ANON_KEY,
+            "Authorization": f"Bearer {token}",
+        },
+        timeout=5,
+    )
     if resp.status_code != 200:
-        raise Exception("Token verification failed at Supabase API")
-    return resp.json()
+        raise ValueError(f"Supabase rejected token (status {resp.status_code})")
+    user_data = resp.json()
+
+    with _token_cache_lock:
+        if len(_token_cache) >= _TOKEN_CACHE_MAX_ENTRIES:
+            for stale_key in [k for k, (exp, _) in _token_cache.items() if exp <= now]:
+                del _token_cache[stale_key]
+            if len(_token_cache) >= _TOKEN_CACHE_MAX_ENTRIES:
+                _token_cache.clear()
+        _token_cache[key] = (now + _TOKEN_CACHE_TTL_SECONDS, user_data)
+
+    return user_data
+
 
 def get_current_user(
     db: Session = Depends(get_db),
-    sb_access_token: str | None = Cookie(default=None),
-    auth_header: HTTPAuthorizationCredentials | None = Security(security)
+    auth_header: HTTPAuthorizationCredentials | None = Security(security),
 ) -> User:
-    token = sb_access_token
-    if not token and auth_header:
-        token = auth_header.credentials
-        
-    if not token:
+    if not auth_header:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    token = auth_header.credentials
+
     try:
-        # 1. Verify token securely with Supabase API (cached)
         user_data = verify_supabase_token_with_api(token)
-        supabase_id = user_data.get("id")
-        email = user_data.get("email")
-        
-        # 2. Also decode locally to get user_metadata for JIT
-        payload = jwt.get_unverified_claims(token)
-
-        if not supabase_id or not email:
-            print("Missing sub or email in payload:", payload)
-            raise HTTPException(status_code=403, detail="Could not validate credentials")
-
     except Exception as e:
-        print(f"JWT Verification Error: {e}")
+        logger.warning("Token verification failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Could not validate credentials: {str(e)}",
+            detail="Could not validate credentials",
+        )
+
+    supabase_id = user_data.get("id")
+    email = user_data.get("email")
+    if not supabase_id or not email:
+        logger.warning("Verified token is missing id or email")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Could not validate credentials",
         )
 
     user = db.query(User).filter(User.supabase_id == supabase_id).first()
@@ -64,14 +91,22 @@ def get_current_user(
     if not user:
         user = db.query(User).filter(User.email == email).first()
         if user:
+            # Linking an existing local account by email is only safe for a verified email.
+            if not user_data.get("email_confirmed_at"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Email address is not verified",
+                )
             user.supabase_id = supabase_id
             db.commit()
         else:
             from app.models.profile import Profile
+            metadata = user_data.get("user_metadata") or {}
+            full_name = (metadata.get("full_name") or metadata.get("name") or "")[:120] or None
             user = User(
                 supabase_id=supabase_id,
                 email=email,
-                full_name=payload.get("user_metadata", {}).get("full_name") or payload.get("name")
+                full_name=full_name,
             )
             db.add(user)
             db.flush()
@@ -81,6 +116,7 @@ def get_current_user(
 
     return user
 
+
 def get_current_active_user(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -88,4 +124,3 @@ def get_current_active_user(
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
-

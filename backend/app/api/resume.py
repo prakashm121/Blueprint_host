@@ -1,9 +1,18 @@
 ﻿import json
 import logging
+import os
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
+from app.core.config import settings
+from app.core.rate_limit import (
+    enforce_window,
+    ist_day_start_utc,
+    seconds_until_ist_midnight,
+    too_many_requests,
+)
 from app.models.user import User
 from app.models.resume import ResumeAnalysis
 from app.services.resume.extractor import file_hash
@@ -19,14 +28,21 @@ async def upload_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not file.filename.lower().endswith(".pdf"):
+    # Burst guard against rapid-fire uploads (also narrows the check-then-insert race below).
+    enforce_window("resume", current_user.id, 5, 60, "Too many uploads. Please wait a minute.")
+
+    safe_name = os.path.basename((file.filename or "").replace("\\", "/"))[:255]
+    if not safe_name.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
-    file_bytes = await file.read()
+    # Read at most MAX+1 bytes so an oversized upload can't be pulled fully into memory.
+    file_bytes = await file.read(MAX_PDF_BYTES + 1)
     if len(file_bytes) > MAX_PDF_BYTES:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 5MB.")
     if len(file_bytes) == 0:
         raise HTTPException(status_code=400, detail="File is empty.")
+    if not file_bytes.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="File is not a valid PDF.")
 
     target_companies = []
     if current_user.target_companies:
@@ -37,12 +53,44 @@ async def upload_resume(
     role = current_user.target_role or "Software Engineer"
 
     pdf_hash = file_hash(file_bytes)
-    
+
+    # 1. Same file already analysed (or being analysed) by this user -> reuse it: no new AI call,
+    #    no new Celery job, and it does not use up the daily quota.
+    same_file = (
+        db.query(ResumeAnalysis)
+        .filter(
+            ResumeAnalysis.user_id == current_user.id,
+            ResumeAnalysis.file_hash == pdf_hash,
+            ResumeAnalysis.status.in_(("COMPLETED", "PENDING", "PROCESSING")),
+        )
+        .order_by(ResumeAnalysis.id.desc())
+        .first()
+    )
+    if same_file:
+        return {"id": same_file.id, "status": same_file.status, "reused": True}
+
+    # 2. A genuinely new file: limited to N new analyses per IST day. Failed analyses don't count.
+    new_today = (
+        db.query(func.count(ResumeAnalysis.id))
+        .filter(
+            ResumeAnalysis.user_id == current_user.id,
+            ResumeAnalysis.created_at >= ist_day_start_utc(),
+            ResumeAnalysis.status != "FAILED",
+        )
+        .scalar()
+    )
+    if new_today >= settings.RESUME_MAX_NEW_UPLOADS_PER_DAY:
+        raise too_many_requests(
+            "You can analyse one new resume per day. Re-uploading the same file is free, "
+            "or try a new version tomorrow.",
+            seconds_until_ist_midnight(),
+        )
+
     # 202 Accepted Architecture: Save job as PENDING and dispatch Celery Task
     analysis = ResumeAnalysis(
         user_id=current_user.id,
         file_hash=pdf_hash,
-        file_name=file.filename,
+        file_name=safe_name,
         extraction_method="pdfminer",
         status="PENDING" # Assumes you add status to the model, or use ats_score=None as a proxy if db hasn't migrated
     )

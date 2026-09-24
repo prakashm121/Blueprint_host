@@ -47,6 +47,7 @@ def get_roadmap(
     """Fetch the user's current role roadmap with all milestones."""
     roadmap = (
         db.query(RoleRoadmap)
+        .filter(RoleRoadmap.user_id == current_user.id)
         .order_by(RoleRoadmap.created_at.desc())
         .first()
     )
@@ -80,7 +81,11 @@ def update_milestone_status(
 
     milestone = (
         db.query(RoadmapMilestone)
-        .filter(RoadmapMilestone.id == milestone_id)
+        .join(RoleRoadmap, RoadmapMilestone.roadmap_id == RoleRoadmap.id)
+        .filter(
+            RoadmapMilestone.id == milestone_id,
+            RoleRoadmap.user_id == current_user.id,
+        )
         .first()
     )
     if not milestone:

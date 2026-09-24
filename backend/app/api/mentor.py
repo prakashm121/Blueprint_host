@@ -1,12 +1,22 @@
-﻿import time
+﻿import json
+import time
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
 from app.api import deps
+from app.core.config import settings
+from app.core.rate_limit import (
+    enforce_daily,
+    enforce_window,
+    ist_day_start_utc,
+    seconds_until_ist_midnight,
+    too_many_requests,
+)
 from app.core.cache import redis_client
 from app.db.session import get_db
 from app.models.user import User
@@ -47,20 +57,45 @@ def _update_skill_confidence(db: Session, user: User, topic: str, delta: int = 1
 # Rate limiting helper
 # ---------------------------------------------------------------------------
 
-#def _check_rate_limit(user_id: int, limit: int = 15, window_seconds: int = 60):
-#    """Sliding window rate limit. Raises 429 if exceeded."""
- #   if not redis_client:
- #       return  # Redis unavailable â€” skip rate limiting gracefully
-#    key = f"mentor:ratelimit:{user_id}"
-#    count = redis_client.incr(key)
-#    if count == 1:
-#        redis_client.expire(key, window_seconds)
-#    if count > limit:
-#        raise HTTPException(
-#            status_code=429,
- #           detail="Message rate limit reached. Please wait a moment.",
-#            headers={"Retry-After": str(window_seconds)},
-#        )
+def _enforce_mentor_limits(db: Session, user: User, conversation_id: int) -> None:
+    """Burst, per-day and per-conversation ("session") message limits. Raises 429 when exceeded."""
+    enforce_window(
+        "mentor", user.id, settings.MENTOR_MAX_PER_MINUTE, 60,
+        "You're sending messages too quickly. Please wait a moment.",
+    )
+
+    # Counted from the messages table: authoritative and survives restarts.
+    sent_in_conversation = (
+        db.query(func.count(MentorMessage.id))
+        .filter(
+            MentorMessage.conversation_id == conversation_id,
+            MentorMessage.user_id == user.id,
+            MentorMessage.role == "user",
+        )
+        .scalar()
+    )
+    if sent_in_conversation >= settings.MENTOR_MAX_PER_CONVERSATION:
+        raise too_many_requests(
+            f"This conversation has reached its {settings.MENTOR_MAX_PER_CONVERSATION}-message limit. "
+            "Start a new conversation to continue.",
+            60,
+        )
+
+    sent_today = (
+        db.query(func.count(MentorMessage.id))
+        .filter(
+            MentorMessage.user_id == user.id,
+            MentorMessage.role == "user",
+            MentorMessage.created_at >= ist_day_start_utc(),
+        )
+        .scalar()
+    )
+    if sent_today >= settings.MENTOR_MAX_PER_DAY:
+        raise too_many_requests(
+            f"You've reached today's limit of {settings.MENTOR_MAX_PER_DAY} mentor messages. "
+            "It resets at midnight IST.",
+            seconds_until_ist_midnight(),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -72,9 +107,16 @@ class CreateConversationRequest(BaseModel):
 
 
 class MessageRequest(BaseModel):
-    content: str
+    content: str = Field(..., max_length=settings.MENTOR_MAX_MESSAGE_CHARS)
     seed_context: Optional[dict] = None
     model_override: Optional[str] = None
+
+    @field_validator("seed_context")
+    @classmethod
+    def _limit_seed_context_size(cls, v):
+        if v is not None and len(json.dumps(v, default=str)) > 8000:
+            raise ValueError("seed_context is too large")
+        return v
 
 
 class MessageResponse(BaseModel):
@@ -131,9 +173,13 @@ def create_conversation(
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
+    enforce_daily(
+        "mentor_new_conversation", current_user.id, settings.MENTOR_MAX_NEW_CONVERSATIONS_PER_DAY,
+        "Too many new conversations today. Please continue an existing one.",
+    )
     convo = MentorConversation(
         user_id=current_user.id,
-        title=body.title or "New conversation",
+        title=(body.title or "New conversation")[:200],
     )
     db.add(convo)
     db.commit()
@@ -199,6 +245,11 @@ async def stream_message(
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    _enforce_mentor_limits(db, current_user, convo.id)
+
+    # Only models from the configured mentor chain may be requested; anything else is ignored.
+    model_override = body.model_override if body.model_override in settings.GEMINI_MENTOR_MODELS else None
+
     history_msgs = (
         db.query(MentorMessage)
         .filter(MentorMessage.conversation_id == convo.id)
@@ -242,7 +293,7 @@ async def stream_message(
                     topic=convo.active_topic or "General",
                     message=trimmed,
                     history=history,
-                    model_override=body.model_override,
+                    model_override=model_override,
                 )
             else:
                 mentor_ctx = build_mentor_context(db, current_user)
@@ -251,7 +302,7 @@ async def stream_message(
                     context=mentor_ctx,
                     message=trimmed,
                     history=history,
-                    model_override=body.model_override,
+                    model_override=model_override,
                 )
 
             t2 = time.perf_counter()
@@ -266,9 +317,16 @@ async def stream_message(
             import traceback
             print(f"[Stream] event_generator ERROR: {e}")
             traceback.print_exc()
-            yield f"data: {_json.dumps({'error': str(e)})}\n\n"
+            yield f"data: {_json.dumps({'error': 'The AI service is unavailable right now.'})}\n\n"
             return
         finally:
+            if not full_reply:
+                # Nothing was generated: drop the unanswered message so it doesn't use up the daily quota.
+                try:
+                    db.delete(user_msg)
+                    db.commit()
+                except Exception:
+                    db.rollback()
             if full_reply:
                 reply_text = "".join(full_reply)
                 assistant_msg = MentorMessage(

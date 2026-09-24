@@ -16,6 +16,8 @@ FastAPI service powering the Blueprint placement-prep platform: Supabase-authent
 - [AI Gateway](#ai-gateway)
 - [Background jobs](#background-jobs)
 - [Caching](#caching)
+- [Rate limiting](#rate-limiting)
+- [Security](#security)
 - [Interview Hub content bank](#interview-hub-content-bank)
 - [Deployment](#deployment)
 - [Known gaps / tech debt](#known-gaps--tech-debt)
@@ -36,7 +38,7 @@ FastAPI service powering the Blueprint placement-prep platform: Supabase-authent
 | AI | Google Gemini, via `google-genai` SDK | wrapped by a single `AIGateway` (`app/ai/gateway.py`) used by resume/mentor/roadmap |
 | PDF parsing | `pdfminer.six` | resume text extraction |
 
-`passlib[argon2]` and `python-jose` are still in `requirements.txt` from an earlier local-JWT design — see [Known gaps](#known-gaps--tech-debt).
+Dependencies are deliberately minimal: `passlib` and `python-jose` (leftovers from an earlier local-JWT design) were removed — user metadata now comes from Supabase's verified response, so no JWT library is needed. Versions in `requirements.txt` use `>=` floors with no lockfile (see [Known gaps](#known-gaps--tech-debt)).
 
 ---
 
@@ -59,9 +61,10 @@ FastAPI service powering the Blueprint placement-prep platform: Supabase-authent
                     GitHub Actions (.github/workflows/planner-reminders.yml)
 ```
 
-- **Auth**: the frontend authenticates entirely through Supabase (Google OAuth). The backend never issues its own tokens — `app/api/deps.py` takes the Supabase access token (cookie or `Authorization` header), verifies it by calling Supabase's own API, and JIT-provisions a local `User`/`Profile` row on first sight. `app/api/auth.py` only exposes `GET /me`.
+- **Auth**: the frontend authenticates entirely through Supabase (Google OAuth). The backend never issues its own tokens — `app/api/deps.py` takes the Supabase access token from the `Authorization: Bearer` header only (cookie auth was removed), verifies it by calling Supabase's own API (5s timeout), and JIT-provisions a local `User`/`Profile` row on first sight. Verified tokens are cached for **60 seconds** (keyed by a hash of the token), so sign-out or revocation in Supabase takes effect within a minute. An existing local account is only linked by email if Supabase reports the email as confirmed. `app/api/auth.py` only exposes `GET /me`.
 - **No Celery Beat.** There used to be one; it was removed. The only Celery task left is resume analysis (`process_resume_task`, dispatched via `.delay()` from `POST /resume/upload`) because it's the one job that's genuinely slow (a Gemini call that can take up to 120s) and shouldn't block an HTTP request. The one genuine periodic job — hourly planner-reminder scanning — is triggered by a GitHub Actions scheduled workflow hitting `POST /api/v1/internal/scan-planner-reminders` (guarded by a shared-secret header), which runs synchronously and writes notifications directly — no queue involved.
 - **AI Gateway** (`app/ai/gateway.py`) is the single point every Gemini call goes through — model-fallback chains per task type, structured-output schema enforcement via Pydantic, retry/failover on 404/429/503.
+- **Rate limiting** (`app/core/rate_limit.py`) protects every Gemini-backed feature plus a per-IP flood guard on the whole API — see [Rate limiting](#rate-limiting).
 
 ---
 
@@ -121,6 +124,7 @@ backend/
 │   ├── core/
 │   │   ├── config.py               # Settings (env vars)
 │   │   ├── cache.py                # get_cache/set_cache/delete_cache (Redis)
+│   │   ├── rate_limit.py           # burst/daily limiters + per-IP flood-guard middleware
 │   │   └── role_skills.py          # static role → skill taxonomy
 │   │
 │   └── db/session.py                # SessionLocal, Base, get_db, init_db
@@ -150,7 +154,7 @@ uvicorn main:app --reload
 ```
 
 - API: http://localhost:8000
-- Swagger docs: http://localhost:8000/docs
+- Swagger docs: http://localhost:8000/docs (disabled when `APP_ENV=production`)
 
 The Celery worker is **only** needed if you're testing resume upload locally:
 
@@ -173,13 +177,15 @@ No Dockerfile or `docker-compose.yml` exists in this repo — local dev is nativ
 The real list, read from `app/core/config.py` (`.env.example` in the repo is out of date — see [Known gaps](#known-gaps--tech-debt)):
 
 ```env
-SECRET_KEY=                      # not used for auth anymore (Supabase handles that); still read on startup
+APP_ENV=development              # set to `production` on Render: disables /docs, /redoc and /openapi.json
+SECRET_KEY=                      # unused for auth (Supabase handles that); random per-process default if unset
 DATABASE_URL=postgresql+psycopg://user:pass@host:5432/db
 FRONTEND_URL=http://localhost:5173   # CORS allow-origin
 
 # Supabase (auth)
 SUPABASE_URL=
 SUPABASE_JWT_SECRET=
+SUPABASE_ANON_KEY=              # optional: publishable key for the server-side token check (has a built-in default)
 
 # Gemini
 GEMINI_API_KEY=
@@ -197,6 +203,18 @@ WORKER_MODE=celery
 
 # Internal cron trigger (GitHub Actions → /internal/scan-planner-reminders)
 INTERNAL_TRIGGER_SECRET=
+
+# Rate limits — all optional, defaults shown. "Day" = IST calendar day.
+GLOBAL_RATE_LIMIT_PER_MINUTE=600          # per IP; 0 disables
+MENTOR_MAX_PER_MINUTE=6
+MENTOR_MAX_PER_DAY=60
+MENTOR_MAX_PER_CONVERSATION=40
+MENTOR_MAX_NEW_CONVERSATIONS_PER_DAY=30
+MENTOR_MAX_MESSAGE_CHARS=4000
+RESUME_MAX_NEW_UPLOADS_PER_DAY=1
+PLANNER_DAILY_AI_PER_DAY=6
+PLANNER_WEEKLY_AI_PER_DAY=5
+ROADMAP_GENERATIONS_PER_DAY=5
 
 # Outbox tuning (currently unused — outbox pattern is dormant, see Known gaps)
 OUTBOX_BATCH_SIZE=50
@@ -288,14 +306,14 @@ All routes are prefixed `/api/v1/`.
 | `GET` / `POST` / `DELETE` | `/vault`, `/vault/{id}` | Knowledge vault CRUD |
 | `GET` | `/notifications/unread-count`, `/notifications` | Notification feed |
 | `PATCH` / `POST` | `/notifications/{id}/read`, `/notifications/read-all` | Mark read |
-| `POST` | `/resume/upload` | 202 Accepted — enqueues `process_resume_task`, poll for status |
+| `POST` | `/resume/upload` | Same file as an earlier upload → returns that analysis (`reused: true`, free). New file → 202, enqueues `process_resume_task`; limited to 1 new analysis/day. Poll `GET /resume/{id}` for status |
 | `GET` | `/resume/history`, `/resume/{analysis_id}` | Resume analysis history / detail |
 
 **Internal / ops**
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/internal/scan-planner-reminders` | Shared-secret-protected; runs the planner-reminder scan on demand (GitHub Actions calls this hourly) |
-| `GET` | `/status/workers` | Outbox backlog stats (will always show 0 — see Known gaps) |
+| `GET` | `/status/workers` | Outbox backlog stats — requires login (will always show 0 — see Known gaps) |
 | `GET` | `/health` | Liveness check |
 
 ---
@@ -330,10 +348,49 @@ Redis serves two roles simultaneously — it's not just the Celery broker:
 |---|---|---|
 | Hub content lists/detail | minutes–hours | `app/api/hub.py` |
 | Vault responses | 300s | `app/api/vault.py` |
-| Planner daily-regeneration rate limit | — | `app/api/planner.py` (`redis_client.incr`/`.expire`) |
+| Per-day AI quota counters (planner, roadmap) | until IST midnight | `app/core/rate_limit.py` |
 | AI context / interview-question cache | 300s–43200s | `app/services/context_builder.py` |
 
 All cache access goes through `app/core/cache.py`.
+
+---
+
+## Rate limiting
+
+All limits live in `app/core/rate_limit.py` and are configurable via env vars (see [Environment variables](#environment-variables)). A "day" resets at **midnight IST**. Every rejection is an HTTP `429` with a human-readable `detail` and a `Retry-After` header (and still carries CORS headers, so the browser can read it).
+
+| Feature | Limit | Counted from |
+|---|---|---|
+| Mentor — per conversation ("session") | 40 messages, then "start a new conversation" | `mentor_messages` table |
+| Mentor — per day | 60 messages per user | `mentor_messages` table |
+| Mentor — burst | 6 messages / minute | in memory |
+| Mentor — misc | 30 new conversations/day; message ≤ 4,000 chars; `seed_context` ≤ 8 KB; `model_override` must be in the configured mentor model list (otherwise ignored) | DB / request validation |
+| Resume upload | **Same file (same hash) as an existing analysis → returns that analysis, no AI call, no quota used.** A genuinely new file → 1 per day. Failed analyses don't count. Burst: 5 uploads / minute | `resume_analyses` table |
+| Daily planner (Gemini) | 6 generations/day (cache hits are free) | Redis, in-memory fallback |
+| Weekly planner (Gemini) | 5/day | Redis, in-memory fallback |
+| Roadmap generation (Gemini) | 5/day | Redis, in-memory fallback |
+| Whole API | 600 requests / minute / IP (`/health` and the internal cron endpoint are exempt) | in memory |
+
+Design notes:
+- **Redis usage is deliberately tiny** (Upstash free tier = 500K commands/month): mentor and resume quotas are counted from tables that already exist, and burst limits are in-memory. Only the planner/roadmap daily counters touch Redis.
+- In-memory counters are per-process and reset when the free-tier instance sleeps or restarts. That's fine for short bursts; every *daily* quota uses the database or Redis.
+- The per-IP guard is generous on purpose: many students can share one public IP on a campus network, so per-user limits do the real fairness work.
+- The middleware is pure ASGI (not `BaseHTTPMiddleware`) so SSE streaming is untouched, and it is registered before CORS so CORS stays outermost.
+
+---
+
+## Security
+
+Behaviours worth knowing about (verified in code):
+
+- **Auth**: bearer token only; 60s verified-token cache; generic error messages (no internals leaked to clients, no token claims logged); email-based account linking requires a confirmed email.
+- **Authorization**: every ID-based endpoint filters by the current user (roadmap `GET`/`PATCH` were fixed to do so — previously any user could read the newest roadmap and edit any milestone).
+- **Resume upload**: `.pdf` name + `%PDF-` magic-byte check, body read capped at 5 MB + 1 byte (not fully buffered first), sanitised filename, Celery task hard time limit (180s).
+- **Profile input**: max lengths match DB column sizes; `linkedin_url`/`avatar_url` must start with `http(s)://` (blocks `javascript:` URLs).
+- **Transport**: Redis connections (Celery broker and cache) verify TLS certificates (`CERT_REQUIRED`).
+- **Internal endpoint**: `X-Internal-Secret` compared in constant time (`hmac.compare_digest`); fails closed with 503 if the secret isn't configured.
+- **Surface**: `/docs`, `/redoc`, `/openapi.json` are disabled when `APP_ENV=production`; `/status/workers` requires login.
+- **CI**: the GitHub workflow declares `permissions: {}` and passes secrets through `env:`.
 
 ---
 
@@ -355,7 +412,7 @@ The seed script checks `count() == 0` before writing, so it's safe to re-run, bu
 
 One Render free Web Service running `start.sh` (`uvicorn` + Celery worker, no Beat). No Dockerfile, `docker-compose.yml`, or `render.yaml` exist in this repo — the service is configured directly in the Render dashboard (root directory `backend`, build `pip install -r requirements.txt`, start `bash start.sh`).
 
-Redis is Upstash (free tier). The hourly planner-reminder scan is triggered by GitHub Actions, not a second always-on service — see `.github/workflows/planner-reminders.yml` at the repo root.
+Set `APP_ENV=production` on Render (turns off the interactive API docs). Redis is Upstash (free tier). The hourly planner-reminder scan is triggered by GitHub Actions, not a second always-on service — see `.github/workflows/planner-reminders.yml` at the repo root. It needs two repo secrets (`RENDER_APP_URL` — no trailing slash — and `INTERNAL_TRIGGER_SECRET`, identical to the Render env var) and retries the call for a few minutes, because the free-tier service is usually asleep at the top of the hour.
 
 ---
 
@@ -363,9 +420,12 @@ Redis is Upstash (free tier). The hourly planner-reminder scan is triggered by G
 
 Documented honestly rather than silently glossed over:
 
-- **`.env.example` is stale.** It still lists `SMTP_*`, `APP_ROLE`, `WORKER_MODE=embedded/arq`, and `SCHEDULER_ENABLED` from an earlier design, and is missing `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, and `INTERNAL_TRIGGER_SECRET`, which the app actually reads. Use the [Environment variables](#environment-variables) section above, not this file, until it's synced.
-- **`passlib[argon2]` and `python-jose`** are still dependencies from a prior local-JWT auth design. `jose` is used only for *unverified* claim decoding (metadata extraction), not token verification — Supabase's own API is the trust anchor. `passlib` appears to have no live caller at all. Neither should be removed without double-checking, but both are candidates for cleanup.
+- **`.env.example` is stale.** It still lists `SMTP_*`, `APP_ROLE`, `WORKER_MODE=embedded/arq`, and `SCHEDULER_ENABLED` from an earlier design, and is missing `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `INTERNAL_TRIGGER_SECRET`, `APP_ENV` and the rate-limit variables, which the app actually reads. Use the [Environment variables](#environment-variables) section above, not this file, until it's synced.
 - **The outbox pattern is dead code by design** (see [Background jobs](#background-jobs)) — the table, handlers, and event types are kept for a future real external-delivery use case, but nothing writes to `OutboxEvent` today. `GET /status/workers` will report an empty backlog forever until that changes.
 - **No email is actually sent anywhere.** Despite `SMTP_*` vars existing in `.env.example`, there is no email-sending code in the codebase. All "notifications" are in-app only (`Notification` rows).
 - **`scratch_seed_data.py` hardcodes a stale absolute path** to a differently-named clone of this repo — fix the path before relying on it to seed a fresh environment.
-- **`deps.py` hardcodes a Supabase publishable/anon key** inline for the server-to-Supabase verification call, rather than reading it from an env var. It's the anon key (not a secret), but it should still come from config for the sake of environment portability (e.g. staging vs prod Supabase projects).
+- **Supabase publishable key has a built-in default** in `app/core/config.py` (`SUPABASE_ANON_KEY`) so existing deployments keep working. It's a public-by-design key, but set `SUPABASE_ANON_KEY` explicitly per environment (staging vs prod) and drop the default.
+- **Resume PDF bytes travel through the Redis/Celery broker** to the worker. Fine at this scale; storing the file (e.g. Supabase Storage) and passing only a reference would be cleaner.
+- **No dependency lockfile.** `requirements.txt` uses `>=` floors, so builds aren't fully reproducible. Pin with `pip-compile` or a hashed lockfile before scaling up.
+- **Row-level security must be verified in Supabase.** The frontend reads many tables directly with the public key; only 5 tables have RLS policies defined in this repo's migrations. Check the Supabase Security Advisor to confirm the rest are protected.
+- **Not yet rate-limited per user:** hub search and quiz/progress writes (covered only by the per-IP guard), and the number of simultaneous open mentor streams.

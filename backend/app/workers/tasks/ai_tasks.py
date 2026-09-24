@@ -12,7 +12,7 @@ import traceback
 logger = logging.getLogger("placementos.ai_tasks")
 
 
-@celery_app.task(name="process_resume_task", bind=True)
+@celery_app.task(name="process_resume_task", bind=True, soft_time_limit=150, time_limit=180)
 def process_resume_task(
     self,
     analysis_id: str,

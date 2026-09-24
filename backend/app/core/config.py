@@ -1,4 +1,5 @@
 ﻿import os
+import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -8,7 +9,9 @@ load_dotenv(BASE_DIR / ".env")
 class Settings:
     PROJECT_NAME: str = "Blueprint"
     API_V1_STR: str = "/api/v1"
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "replace-with-a-secure-key-for-dev")
+    APP_ENV: str = os.getenv("APP_ENV", "development")
+    # Not used for auth (Supabase handles that); random per-process default instead of a guessable constant.
+    SECRET_KEY: str = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     
     raw_db_url = os.getenv("DATABASE_URL", "sqlite:///./placementos.db")
@@ -65,6 +68,9 @@ class Settings:
     # Supabase
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
+    # Publishable (public-by-design) key used for the server-side token check. The default keeps
+    # existing deployments working; set SUPABASE_ANON_KEY in the environment to override it.
+    SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "sb_publishable_Rf2TcAUwPhvVSSBP6J73MQ_LzRNLoL6")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
     # Workers & scaling
@@ -74,6 +80,18 @@ class Settings:
     OUTBOX_BATCH_SIZE: int = int(os.getenv("OUTBOX_BATCH_SIZE", "50"))
     OUTBOX_MAX_ATTEMPTS: int = int(os.getenv("OUTBOX_MAX_ATTEMPTS", "5"))
     OUTBOX_POLL_SECONDS: int = int(os.getenv("OUTBOX_POLL_SECONDS", "2"))
+
+    # Rate limits (all overridable via env). "Day" = IST calendar day.
+    GLOBAL_RATE_LIMIT_PER_MINUTE: int = int(os.getenv("GLOBAL_RATE_LIMIT_PER_MINUTE", "600"))   # per IP; 0 disables
+    MENTOR_MAX_PER_MINUTE: int = int(os.getenv("MENTOR_MAX_PER_MINUTE", "6"))
+    MENTOR_MAX_PER_DAY: int = int(os.getenv("MENTOR_MAX_PER_DAY", "60"))
+    MENTOR_MAX_PER_CONVERSATION: int = int(os.getenv("MENTOR_MAX_PER_CONVERSATION", "40"))
+    MENTOR_MAX_NEW_CONVERSATIONS_PER_DAY: int = int(os.getenv("MENTOR_MAX_NEW_CONVERSATIONS_PER_DAY", "30"))
+    MENTOR_MAX_MESSAGE_CHARS: int = int(os.getenv("MENTOR_MAX_MESSAGE_CHARS", "4000"))
+    RESUME_MAX_NEW_UPLOADS_PER_DAY: int = int(os.getenv("RESUME_MAX_NEW_UPLOADS_PER_DAY", "1"))
+    PLANNER_DAILY_AI_PER_DAY: int = int(os.getenv("PLANNER_DAILY_AI_PER_DAY", "6"))
+    PLANNER_WEEKLY_AI_PER_DAY: int = int(os.getenv("PLANNER_WEEKLY_AI_PER_DAY", "5"))
+    ROADMAP_GENERATIONS_PER_DAY: int = int(os.getenv("ROADMAP_GENERATIONS_PER_DAY", "5"))
 
     # Shared secret for internal cron-trigger endpoints (e.g. GitHub Actions scheduled scans)
     INTERNAL_TRIGGER_SECRET: str = os.getenv("INTERNAL_TRIGGER_SECRET", "")

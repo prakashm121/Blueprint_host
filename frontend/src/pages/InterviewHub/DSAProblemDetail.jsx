@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import DOMPurify from 'dompurify';
 import { supabase } from '../../lib/supabase';
 import { api } from '../../api';
 
@@ -214,7 +215,7 @@ export default function DSAProblemDetail() {
             </div>
             <article className="text-sm text-on-surface-variant leading-relaxed overflow-x-auto">
               {problem?.content ? (
-                <div className="dynamic-html-content" dangerouslySetInnerHTML={{ __html: problem.content }} />
+                <div className="dynamic-html-content" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(problem.content || '') }} />
               ) : (
                 <p className="italic opacity-40 text-xs">No description available.</p>
               )}

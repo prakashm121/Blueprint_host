@@ -5,11 +5,18 @@ on:
     - cron: '0 * * * *'   # hourly, UTC
   workflow_dispatch: {}    # allows manually triggering a run for testing
 
+permissions: {}
+
 jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
       - name: Call internal reminder-scan endpoint
+        env:
+          RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
+          INTERNAL_TRIGGER_SECRET: ${{ secrets.INTERNAL_TRIGGER_SECRET }}
+        # Render's free tier is usually asleep at this hour, so allow for the ~1 min cold start.
         run: |
-          curl -sf -X POST "${{ secrets.RENDER_APP_URL }}/api/v1/internal/scan-planner-reminders" \
-            -H "X-Internal-Secret: ${{ secrets.INTERNAL_TRIGGER_SECRET }}"
+          curl -sf -X POST "$RENDER_APP_URL/api/v1/internal/scan-planner-reminders" \
+            -H "X-Internal-Secret: $INTERNAL_TRIGGER_SECRET" \
+            --retry 5 --retry-delay 20 --retry-all-errors --max-time 120

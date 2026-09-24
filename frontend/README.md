@@ -14,6 +14,8 @@ React 19 + Vite SPA for the Blueprint placement-prep platform. Auth is Supabase 
 - [Auth](#auth)
 - [Data fetching — the hybrid model](#data-fetching--the-hybrid-model)
 - [State management](#state-management)
+- [Rate limits in the UI](#rate-limits-in-the-ui)
+- [Security notes](#security-notes)
 - [Known gaps](#known-gaps)
 
 ---
@@ -32,6 +34,7 @@ React 19 + Vite SPA for the Blueprint placement-prep platform. Auth is Supabase 
 | Styling | Tailwind CSS v4, via the first-party `@tailwindcss/vite` plugin |
 | Icons | `lucide-react` |
 | Markdown rendering | `react-markdown` + `remark-gfm` (mentor chat) |
+| HTML sanitising | `dompurify` — cleans database-sourced problem HTML before `dangerouslySetInnerHTML` |
 | 3D graphics | `three` (landing page hero) |
 | Linting | `oxlint` (the actual `lint` script — `eslint` is present but not what's wired up) |
 
@@ -124,7 +127,7 @@ VITE_SUPABASE_ANON_KEY=
 
 | Path | Component | Protected |
 |---|---|---|
-| `/` | `Landing` | No |
+| `/` | `Landing` — authenticated users are redirected to `/dashboard` | No |
 | `/login` | `Login` (Google OAuth via Supabase) | No |
 | `/register` | redirects to `/login` — registration and login are the same OAuth flow | No |
 | `/check-email` | `CheckEmail` | No |
@@ -152,7 +155,9 @@ Notifications are a slide-over panel mounted from `Sidebar.jsx`, not a routed pa
 Auth is Supabase's own session — there is no custom register/login call to the backend:
 
 - `Login.jsx` calls `supabase.auth.signInWithOAuth({ provider: 'google' })`. That's the only sign-in method; there's no password form.
-- `App.jsx` bootstraps auth on mount via `supabase.auth.getSession()` and stays in sync via `supabase.auth.onAuthStateChange()`. On a session, it calls `setAuth(user, access_token)` and mirrors the token into an `sb_access_token` cookie; on sign-out it clears both.
+- `App.jsx` bootstraps auth on mount via `supabase.auth.getSession()` and stays in sync via `supabase.auth.onAuthStateChange()`, calling `setAuth(user, access_token)` / `logout()`. The token lives **in memory only** (Zustand) — there is no auth cookie and no duplicate copy in `localStorage` (Supabase's own client still persists its session). The backend accepts the `Authorization` header only.
+- **Landing redirect:** the `/` route sends logged-in users to `/dashboard`. This also covers the case where Supabase's OAuth redirect falls back to the Site URL because `/dashboard` isn't in its allowed Redirect URLs.
+- **Wake-on-visit:** on every page load `App.jsx` fires a fire-and-forget `fetch` to the backend's `/health`, so a sleeping Render free-tier instance starts waking while the user is still on the landing/login page.
 - `ProtectedRoute.jsx` reads the Zustand auth state and additionally calls `GET /api/v1/auth/me` to check `onboarding_completed`, redirecting to `/login` or `/onboarding` as appropriate.
 - `src/api.js`'s request interceptor attaches `Authorization: Bearer <token>` (the Supabase access token) to every backend API call. **There's no response interceptor** — no automatic 401/refresh-retry logic. If a token expires mid-session, the request just fails; the user has to be redirected by the auth-state listener picking up the change, not by axios retrying.
 
@@ -190,9 +195,29 @@ Everything else — hub content, planner tasks, vault items, resume analysis sta
 
 ---
 
+## Rate limits in the UI
+
+The backend rate-limits AI features (see the backend README). The UI surfaces the server's explanation rather than a generic error:
+
+- **Mentor:** a `429` on the stream request is shown as an assistant message with the server's `detail` (e.g. the per-conversation, per-day, or per-minute limit), not "Sorry, I could not respond".
+- **Resume Analyser:** shows the `detail` from a `429` ("one new resume per day"). Re-uploading the **same** file is free — the backend returns the existing analysis and the page polls it as normal.
+
+---
+
+## Security notes
+
+- Problem HTML from the database is sanitised with DOMPurify before rendering; `react-markdown` is used without raw-HTML plugins.
+- `vercel.json` sets `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy` and HSTS.
+- No auth cookie is set by the app; the token is only ever sent in the `Authorization` header.
+
+---
+
 ## Known gaps
 
 - **`VITE_API_URL` vs `VITE_API_BASE_URL` mismatch** — see [Environment variables](#environment-variables). Confirm which one is actually configured wherever this is deployed.
 - **No response interceptor / token refresh** in `api.js` — a 401 just fails the request rather than transparently retrying after a session refresh.
 - **No `.env.example`** checked into `frontend/` — only a real `.env`. Worth adding one (with blank values) so new contributors don't have to guess variable names.
+- **No Content-Security-Policy header yet.** The app needs three.js, Supabase and the Render API allowed, so a CSP has to be tested in a browser (start with `Content-Security-Policy-Report-Only`) rather than added blind.
+- **`frontend/.env` is tracked in git** (public values only, but it bypasses `.gitignore`). Don't untrack it until the variables are confirmed set in Vercel's dashboard, or the production build will lose them.
+- Supabase's own client keeps its session in `localStorage`, so any script-injection bug could still read it — the sanitising and headers above are what reduce that risk.
 - Two data-fetching paths (backend API vs direct Supabase) with no single documented rule for which a new feature should use — see [Data fetching](#data-fetching--the-hybrid-model) for the current de facto pattern.

@@ -14,7 +14,7 @@ from app.core.config import settings
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", settings.REDIS_URL)
 if CELERY_BROKER_URL and CELERY_BROKER_URL.startswith("rediss://") and "?" not in CELERY_BROKER_URL:
-    CELERY_BROKER_URL += "?ssl_cert_reqs=CERT_NONE"
+    CELERY_BROKER_URL += "?ssl_cert_reqs=CERT_REQUIRED"
 
 celery_app = Celery(
     "placementos_workers",

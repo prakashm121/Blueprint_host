@@ -52,10 +52,8 @@ function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         setAuth(session.user, session.access_token);
-        document.cookie = `sb_access_token=${session.access_token}; path=/; max-age=3600; SameSite=Lax`;
       } else {
         logout();
-        document.cookie = 'sb_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       }
       setAuthLoading(false);
     }).catch(() => {
@@ -66,10 +64,8 @@ function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         setAuth(session.user, session.access_token);
-        document.cookie = `sb_access_token=${session.access_token}; path=/; max-age=3600; SameSite=Lax`;
       } else {
         logout();
-        document.cookie = 'sb_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       }
     });
 
