@@ -54,7 +54,7 @@ const towerWidth = (i) => (i < 4 ? 3 : i < 8 ? 2.4 : i < 11 ? 1.8 : 1.2);
 
 // fit: [width, height] of world space that must stay in view
 const VARIANTS = {
-  hero: { floors: 12, width: towerWidth, storey: 0.4, crane: true, route: true, flag: true, plinth: 3.7, fit: [9.4, 7.6] },
+  hero: { floors: 12, width: towerWidth, storey: 0.4, crane: true, route: true, flag: true, plinth: 3.7, fit: [10.4, 7.6] },
   compact: { floors: 12, width: towerWidth, storey: 0.4, crane: true, route: true, flag: true, plinth: 3.7, fit: [8.6, 7.4] },
   broken: { floors: 12, width: towerWidth, storey: 0.4, missing: 6, flag: true, plinth: 3.7, fit: [12.4, 8.6] },
   exploded: { floors: 8, width: (i) => 2.9 - i * 0.2, storey: 0.66, allBuilt: true, plinth: 2.5, fit: [7, 7.4] },
@@ -534,7 +534,9 @@ export function createTowerScene(container, opts) {
     camera.aspect = w / h;
     // Labelled models need room at the sides for their labels, more so on narrow screens.
     // Labels are clamped inside the frame, so only a little extra room is needed for them.
-    const labelRoom = labels.length ? (w < 560 ? 1.08 : 1) : 1;
+    // (Labels hidden by CSS on small screens don't count.)
+    const shownLabels = labels.some((l) => l.el && getComputedStyle(l.el).display !== 'none');
+    const labelRoom = shownLabels ? (w < 560 ? 1.08 : 1) : 1;
     const [needW, needH] = cfg.fit;
     const t = Math.tan((camera.fov * Math.PI) / 360);
     const dist = Math.max(needH / 2 / t, (needW * labelRoom) / 2 / (t * camera.aspect));

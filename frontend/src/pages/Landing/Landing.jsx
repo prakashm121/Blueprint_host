@@ -16,9 +16,9 @@ import { PARTS, STEPS } from './landingData';
 const HERO_LABELS = [
   { floor: 0, side: 'left', title: 'Arrays & hashing', sub: 'Week 1', mobile: false },
   { floor: 2, side: 'right', title: 'Trees & graphs', sub: 'Week 3', mobile: false },
-  { floor: 5, side: 'right', title: 'System design', sub: 'Week 6, this week', current: true },
+  { floor: 5, side: 'right', title: 'System design', sub: 'Week 6, this week', current: true, mobile: false },
   { floor: 8, side: 'left', title: 'Mock interviews', sub: 'Week 9', mobile: false },
-  { floor: 11, side: 'left', title: 'Offer', sub: 'Week 12' },
+  { floor: 11, side: 'left', title: 'Offer', sub: 'Week 12', mobile: false },
 ];
 
 // Exploded view: one slab per part, numbered like the parts list.
@@ -149,8 +149,8 @@ export default function Landing() {
       <header
         className={`fixed inset-x-0 top-0 z-50 transition-colors duration-300 ${
           scrolled || menuOpen
-            ? 'border-b border-border-subtle bg-background-deep/92 backdrop-blur-md'
-            : 'border-b border-transparent'
+            ? 'border-b border-border-subtle bg-background-deep max-md:shadow-lg md:bg-background-deep/95 md:backdrop-blur-md'
+            : 'border-b border-transparent max-md:bg-background-deep'
         }`}
       >
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
@@ -219,14 +219,14 @@ export default function Landing() {
           <div className="mx-auto grid max-w-6xl items-center gap-6 px-5 sm:px-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6">
             {/* One orchestrated entrance: headline, copy and actions rise in turn. */}
             <div className="stagger-in max-w-xl">
-              <h1 className="type-display text-balance text-[2.5rem] text-paper sm:text-[3.4rem] lg:text-[3.2rem] lg:[font-stretch:110%] xl:text-[3.45rem]">
+              <h1 className="type-display text-balance text-[2.15rem] text-paper sm:text-[3.4rem] lg:text-[3.2rem] lg:[font-stretch:110%] xl:text-[3.45rem]">
                 Your placement plan, drawn to scale.
               </h1>
-              <p className="mt-6 max-w-[34rem] text-lg leading-relaxed text-line">
+              <p className="mt-4 max-w-[34rem] text-base leading-relaxed text-line sm:mt-6 sm:text-lg">
                 Blueprint turns your target role and weakest skills into a weekly plan, then tracks your
                 coding practice, quizzes and resume against it. You always know what to do next.
               </p>
-              <div className="mt-9 flex flex-wrap gap-3">
+              <div className="mt-7 flex flex-wrap gap-3 sm:mt-9">
                 <Link to="/login" className={btnPrimary}>
                   Start your plan
                 </Link>
@@ -249,8 +249,11 @@ export default function Landing() {
                   </div>
                 }
               />
-              <p className="mt-1 text-center text-xs text-line sm:-mt-3" style={{ animation: 'fade-in 0.6s ease 2.4s both' }}>
-                Drag the model to turn it
+              <p className="mt-1 px-5 text-center text-xs leading-relaxed text-line sm:-mt-3 sm:px-0" style={{ animation: 'fade-in 0.6s ease 2.4s both' }}>
+                <span className="sm:hidden">
+                  One floor per week: weeks 1 to 5 built, <span className="font-semibold text-highlight">week 6 (system design)</span> lit up, the offer flag at week 12.{' '}
+                </span>
+                Drag the model to turn it.
               </p>
             </div>
           </div>
