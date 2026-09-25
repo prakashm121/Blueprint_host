@@ -21,6 +21,27 @@ const CATEGORY_META = {
 
 const STATUS_CYCLE = { pending: 'in_progress', in_progress: 'completed', completed: 'pending' };
 
+/**
+ * Splits a milestone description into its bullet points.
+ *
+ * Normally each bullet is on its own line ("- First step\n- Second step"). Some older
+ * AI-generated roadmaps were saved with the bullets run together on one line instead
+ * (e.g. "...language.- Study Operating Systems...- Master Database..."), because the
+ * newline never made it into the JSON. Before splitting on real line breaks, insert a
+ * break wherever a sentence ends and is immediately followed by "- " and a capital
+ * letter, which is the specific shape that bug produces — this won't touch ordinary
+ * hyphenated words like "front-end", since those never follow a period.
+ */
+function splitDescriptionPoints(description) {
+  const normalized = description
+    .replace(/\r\n/g, '\n')
+    .replace(/\.-\s+(?=[A-Z])/g, '.\n- ');
+  return normalized
+    .split('\n')
+    .map((line) => line.replace(/^-\s*/, '').trim())
+    .filter(Boolean);
+}
+
 // ── Inline generator panel — shown when no roadmap exists ─────────────────────
 function GenerateRoadmapPanel({ onGenerated }) {
   const [generating, setGenerating] = useState(false);
@@ -140,9 +161,7 @@ function MilestoneCard({ milestone, index, onStatusChange, isPending, justChange
         {/* Description / Tasks */}
         {milestone.description && (
           <div className="mt-3 space-y-2">
-            {milestone.description.split('\n').map((line, i) => {
-              const cleanLine = line.replace(/^-\s*/, '').trim();
-              if (!cleanLine) return null;
+            {splitDescriptionPoints(milestone.description).map((cleanLine, i) => {
               return (
                 <div key={i} className="flex items-start gap-2 text-xs text-line group/item">
                   <div className="w-1.5 h-1.5 rounded-full bg-surface-container-high shrink-0 mt-1 transition-colors group-hover/item:bg-highlight/50" />

@@ -12,10 +12,15 @@ Identified Weak Areas: {weak_str}
 Return EXACTLY 10-15 milestones as a JSON array of objects with this schema:
 {{
   "title": "Specific actionable milestone",
-  "description": "- First step\n- Second step\n- Third step",
-  "category": "Projects", 
+  "description": "- First step\\n- Second step\\n- Third step",
+  "category": "Projects",
   "priority_order": 0
 }}
+
+IMPORTANT: "description" must be 2-4 bullet points, each starting with "- " and separated by
+a JSON-escaped newline (\\n) exactly like the example above, so the field stays valid JSON.
+Never run bullets together on one line or join them with "- " alone and no newline.
+Output ONLY the JSON array, with no other text before or after it.
 """
 
 def build_weekly_prompt(
