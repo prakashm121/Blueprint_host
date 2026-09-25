@@ -212,6 +212,25 @@ def get_active_plan(
 # POST /plans
 # ---------------------------------------------------------------------------
 
+def _weekly_task_fields(task) -> dict:
+    """
+    Normalise one weekly task for insertion. The AI path returns WeeklyTask models
+    (title, category, estimated_hours); the fallback list uses plain dicts with
+    priority and estimated_minutes. Accept both.
+    """
+    data = task.model_dump() if hasattr(task, "model_dump") else dict(task)
+    minutes = data.get("estimated_minutes")
+    if not minutes and data.get("estimated_hours"):
+        minutes = int(data["estimated_hours"]) * 60
+    minutes = max(15, min(int(minutes or 30), 180))  # keep a single task to a sensible size
+    return {
+        "title": (data.get("title") or "Task")[:200],
+        "category": data.get("category") or "General",
+        "priority": data.get("priority") or "Medium",
+        "estimated_minutes": minutes,
+    }
+
+
 @router.post("/plans", response_model=PlanResponse)
 async def create_plan(
     plan_in: PlanCreate,
@@ -319,13 +338,14 @@ async def create_plan(
             datetime.min.time(),
             tzinfo=timezone.utc,
         )
+        fields = _weekly_task_fields(task_data)
         db.add(PlannerTask(
             weekly_plan_id=plan.id,
             user_id=current_user.id,
-            title=task_data.get("title", "Task")[:200],
-            category=task_data.get("category", "General"),
-            priority=task_data.get("priority", "Medium"),
-            estimated_minutes=task_data.get("estimated_minutes", 30),
+            title=fields["title"],
+            category=fields["category"],
+            priority=fields["priority"],
+            estimated_minutes=fields["estimated_minutes"],
             due_date=task_due,
             display_order=carry_over_count + i,
         ))
