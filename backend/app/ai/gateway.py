@@ -308,7 +308,7 @@ class AIGateway:
                     async with self.semaphore:
                         # TTFT (Time To First Token) Timeout strategy
                         # We use streaming internally to detect if a model is stuck in queue.
-                        ttft_timeout = 30.0 if task in ("quiz_generation", "mentor_response", "teacher_response", "interview_qa") else timeout_s
+                        ttft_timeout = min(30.0, timeout_s)
                         time_left = max(1.0, request_deadline - time.monotonic())
                         ttft_timeout = min(ttft_timeout, time_left)
 
@@ -553,7 +553,7 @@ class AIGateway:
                 async with self.semaphore:
                     stream_start_time = time.monotonic()
                     
-                    ttft_timeout = 30.0 if task in ("quiz_generation", "mentor_response", "teacher_response", "interview_qa") else timeout
+                    ttft_timeout = min(30.0, timeout)
                     time_left = max(1.0, request_deadline - time.monotonic())
                     ttft_timeout = min(ttft_timeout, time_left)
 

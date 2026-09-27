@@ -606,7 +606,7 @@ def _validate_candidate(raw: dict, section: str, topic: str, difficulty: str) ->
     except Exception:
         return None
 
-async def _call_gemini_for_questions(prompt: str, timeout_s: float = 60.0) -> list[dict]:
+async def _call_gemini_for_questions(prompt: str, timeout_s: float = 120.0) -> list[dict]:
     # We append a reminder to output JSON since we are not passing a strict schema to the gateway
     response_text = await ai_gateway.generate(
         task="quiz_generation",

@@ -20,7 +20,7 @@ async def generate_role_roadmap_async(
         text = await ai_gateway.generate(
             task="roadmap_generation",
             prompt=prompt,
-            timeout=60.0
+            timeout=120.0
         )
         data = json.loads(text)
         return [RoadmapMilestone(**item) for item in data]
@@ -39,7 +39,7 @@ async def generate_weekly_tasks_async(
         text = await ai_gateway.generate(
             task="weekly_planner",
             prompt=prompt,
-            timeout=15.0
+            timeout=120.0
         )
         data = json.loads(text)
         return [WeeklyTask(**item) for item in data]
@@ -57,7 +57,7 @@ async def generate_daily_breakdown_async(
         text = await ai_gateway.generate(
             task="daily_breakdown",
             prompt=prompt,
-            timeout=45.0
+            timeout=120.0
         )
         data = json.loads(text)
         return [DailyTask(**item) for item in data]

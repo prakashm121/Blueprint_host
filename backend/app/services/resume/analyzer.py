@@ -6,7 +6,7 @@ from app.services.resume.schemas import ResumeFeedback, SCORING_VERSION
 
 logger = logging.getLogger("placementos.resume.analyzer")
 
-TEXT_TIMEOUT = 30.0
+TEXT_TIMEOUT = 120.0
 
 
 async def analyze_text_resume(
