@@ -246,6 +246,15 @@ def submit_goals(
 
 
 
+@router.post("/skip-roadmap", response_model=StepResponse)
+def skip_roadmap(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    current_user.onboarding_step = "completed"
+    db.commit()
+    return StepResponse(onboarding_step="completed")
+
 @router.post("/generate-roadmap", response_model=RoadmapGenerationResponse)
 async def generate_roadmap(
     db: Session = Depends(get_db),

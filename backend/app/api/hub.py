@@ -643,7 +643,11 @@ async def generate_quiz_stream(
     section, topic = body.section, body.topic
 
     if section and not topic and section in QUIZ_TAXONOMY:
-        topic = random.choice(QUIZ_TAXONOMY[section])
+        topics = QUIZ_TAXONOMY[section]
+        if topics:
+            topic = random.choice(topics)
+        else:
+            raise HTTPException(400, f"No valid topics found for section: {section}")
 
     if not section or not topic:
         if body.category or body.skill:
@@ -655,9 +659,16 @@ async def generate_quiz_stream(
                 raise HTTPException(400, str(e))
         else:
             if not section:
-                section = random.choice(list(QUIZ_TAXONOMY.keys()))
+                valid_sections = [s for s, t in QUIZ_TAXONOMY.items() if t]
+                if not valid_sections:
+                    raise HTTPException(500, "Quiz taxonomy is completely empty.")
+                section = random.choice(valid_sections)
             if not topic:
-                topic = random.choice(QUIZ_TAXONOMY[section])
+                topics = QUIZ_TAXONOMY.get(section, [])
+                if topics:
+                    topic = random.choice(topics)
+                else:
+                    raise HTTPException(400, f"No valid topics found for section: {section}")
 
     if section not in QUIZ_TAXONOMY:
         raise HTTPException(400, f"Unknown section: {section}")

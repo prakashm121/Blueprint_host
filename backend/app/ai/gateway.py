@@ -159,13 +159,21 @@ class AIGateway:
         elif task == "roadmap_generation":
             return settings.GEMINI_ROADMAP_MODELS
 
+        elif task == "quiz_generation":
+            base_models = settings.GEMINI_MENTOR_MODELS
+            light_models = getattr(settings, "GEMINI_LIGHT_MODELS", [])
+            combined = []
+            for m in (light_models + base_models):
+                if m not in combined:
+                    combined.append(m)
+            return combined
+
         elif task in (
             "mentor_response",
             "teaching_intent",
             "teacher_response",
             "dsa",
             "interview_qa",
-            "quiz_generation",
         ):
             # Combine both lists so it tries premium models first, then falls back to lite
             base_models = settings.GEMINI_MENTOR_MODELS
@@ -298,15 +306,50 @@ class AIGateway:
                     )
 
                     async with self.semaphore:
-                        response = await asyncio.wait_for(
-                            asyncio.to_thread(
-                                self.client.models.generate_content,
-                                model=current_model,
-                                contents=prompt,
-                                config=config,
-                            ),
-                            timeout=timeout_s,
+                        # TTFT (Time To First Token) Timeout strategy
+                        # We use streaming internally to detect if a model is stuck in queue.
+                        ttft_timeout = 30.0 if task in ("quiz_generation", "mentor_response", "teacher_response", "interview_qa") else timeout_s
+                        time_left = max(1.0, request_deadline - time.monotonic())
+                        ttft_timeout = min(ttft_timeout, time_left)
+
+                        stream_response = await self.client.aio.models.generate_content_stream(
+                            model=current_model,
+                            contents=prompt,
+                            config=config,
                         )
+                        
+                        full_text = []
+                        first_chunk_received = False
+                        
+                        stream_iterator = stream_response.__aiter__()
+                        
+                        try:
+                            # 1. Wait for the FIRST chunk with a strict TTFT timeout
+                            first_chunk = await asyncio.wait_for(stream_iterator.__anext__(), timeout=ttft_timeout)
+                            if first_chunk.text:
+                                first_chunk_received = True
+                                full_text.append(first_chunk.text)
+                        except StopAsyncIteration:
+                            pass
+                        except asyncio.TimeoutError:
+                            raise asyncio.TimeoutError("TTFT Timeout: Model stuck in queue")
+                            
+                        # 2. If the first chunk arrived, the model is healthy and actively generating.
+                        # We now give it the full remaining budget to finish the large payload.
+                        if first_chunk_received:
+                            time_left_for_rest = max(1.0, request_deadline - time.monotonic())
+                            
+                            async def consume_rest():
+                                async for chunk in stream_iterator:
+                                    if chunk.text:
+                                        full_text.append(chunk.text)
+                                        
+                            await asyncio.wait_for(consume_rest(), timeout=time_left_for_rest)
+                            
+                        class FakeResponse:
+                            text = "".join(full_text)
+                            
+                        response = FakeResponse()
 
                     if not response.text:
                         raise AIProviderError(
@@ -510,30 +553,42 @@ class AIGateway:
                 async with self.semaphore:
                     stream_start_time = time.monotonic()
                     
-                    response = await asyncio.wait_for(
-                        self.client.aio.models.generate_content_stream(
-                            model=current_model,
-                            contents=prompt,
-                            config=config,
-                        ),
-                        timeout=timeout,
+                    ttft_timeout = 30.0 if task in ("quiz_generation", "mentor_response", "teacher_response", "interview_qa") else timeout
+                    time_left = max(1.0, request_deadline - time.monotonic())
+                    ttft_timeout = min(ttft_timeout, time_left)
+
+                    stream_response = await self.client.aio.models.generate_content_stream(
+                        model=current_model,
+                        contents=prompt,
+                        config=config,
                     )
 
                     got_first_token = False
-
-                    async for chunk in response:
-                        if chunk.text:
-                            # The moment we receive a token,
-                            # the connection is healthy.
-                            if not got_first_token:
-                                ttft = time.monotonic() - stream_start_time
-                                print(f"[Latency] TTFT (Time To First Token) for {current_model}: {ttft:.3f}s")
-                                await self.health.record_success(
-                                    current_model
-                                )
-                                got_first_token = True
-
-                            yield chunk.text
+                    stream_iterator = stream_response.__aiter__()
+                    
+                    try:
+                        first_chunk = await asyncio.wait_for(stream_iterator.__anext__(), timeout=ttft_timeout)
+                        if first_chunk.text:
+                            got_first_token = True
+                            ttft = time.monotonic() - stream_start_time
+                            print(f"[Latency] TTFT (Time To First Token) for {current_model}: {ttft:.3f}s")
+                            await self.health.record_success(current_model)
+                            yield first_chunk.text
+                    except StopAsyncIteration:
+                        pass
+                    except asyncio.TimeoutError:
+                        raise asyncio.TimeoutError("TTFT Timeout: Model stuck in queue")
+                        
+                    if got_first_token:
+                        time_left_for_rest = max(1.0, request_deadline - time.monotonic())
+                        
+                        async def consume_rest():
+                            async for chunk in stream_iterator:
+                                if chunk.text:
+                                    yield chunk.text
+                                    
+                        async for chunk_text in consume_rest():
+                            yield chunk_text
 
                 return
 

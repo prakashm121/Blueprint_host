@@ -79,6 +79,8 @@ export default function Onboarding() {
   const [generating, setGenerating] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [showSummary, setShowSummary] = useState(false);
+  const [currentSkillIndex, setCurrentSkillIndex] = useState(0);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -123,6 +125,28 @@ export default function Onboarding() {
   const saveProfile = async (e) => {
     e.preventDefault();
     setError('');
+    
+    const year = Number(profileData.graduation_year);
+    if (!year || year < 1980 || year > 2040) {
+      setError('Please enter a valid graduation year between 1980 and 2040.');
+      return;
+    }
+    const cgpa = Number(profileData.cgpa);
+    if (isNaN(cgpa) || cgpa <= 0 || cgpa > 10) {
+      setError('Please enter a valid CGPA between 0 and 10.');
+      return;
+    }
+    const college = profileData.college_name?.trim();
+    if (!college || college.length < 2) {
+      setError('Please enter a valid college or university name.');
+      return;
+    }
+    const validDegrees = ['B.Tech', 'M.Tech', 'B.E.', 'B.Sc.', 'M.Sc.', 'BCA', 'MCA', 'Other'];
+    if (!validDegrees.includes(profileData.degree)) {
+      setError('Please select a valid degree from the list.');
+      return;
+    }
+
     try {
       await api.patch('/api/v1/profile/', profileData);
       setStep('goals');
@@ -134,6 +158,7 @@ export default function Onboarding() {
   const saveRoleSkills = async () => {
     setError('');
     if (!roleCatalog) return;
+    setSaving(true);
     const updates = [];
     roleCatalog.categories.forEach(cat => {
       cat.skills.forEach(s => {
@@ -145,6 +170,8 @@ export default function Onboarding() {
       setShowSummary(true);
     } catch {
       setError('Failed to save assessment.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -182,7 +209,14 @@ export default function Onboarding() {
     }
   };
 
-  const skipToRoadmap = () => { window.location.href = '/roadmap'; };
+  const skipToRoadmap = async () => {
+    try {
+      await api.post('/api/v1/onboarding/skip-roadmap');
+    } catch (e) {
+      console.error(e);
+    }
+    window.location.href = '/roadmap';
+  };
 
 
   const toggleCompany = (name) => {
@@ -194,7 +228,7 @@ export default function Onboarding() {
     }));
   };
 
-  const allSkills = roleCatalog ? roleCatalog.categories.flatMap(c => c.skills) : [];
+  const allSkills = roleCatalog ? roleCatalog.categories.flatMap(c => c.skills.map(s => ({ ...s, category: c.name }))) : [];
   const weakAreas = allSkills.filter(s => (confidence[s.key] ?? 25) <= 25).map(s => s.label);
   const strongAreas = allSkills.filter(s => (confidence[s.key] ?? 25) >= 75).map(s => s.label);
 
@@ -329,27 +363,58 @@ export default function Onboarding() {
           </form>
         )}
 
-        {step === 'role_skills' && roleCatalog && (
+        {step === 'role_skills' && roleCatalog && allSkills.length > 0 && (
           <div className="space-y-6">
-            <p className="text-sm text-line">
-              Rate your skills for <strong className="text-highlight">{goals.target_role}</strong>.
-            </p>
-            {roleCatalog.categories.map((cat, idx) => (
-              <div key={cat.name}>
-                <p className="mb-3 flex items-center gap-2 text-sm font-medium text-on-surface">
-                  {idx === 0 ? <GraduationCap className="h-4 w-4 text-highlight" /> : <div className="w-4" />}
-                  {cat.name}
-                </p>
-                <div className="space-y-3">
-                  {cat.skills.map((s) => (
-                    <ConfidenceRating key={s.key} label={s.label} value={confidence[s.key] ?? 25} onChange={(v) => setConfidence({ ...confidence, [s.key]: v })} />
-                  ))}
-                </div>
+            <div className="flex justify-between items-center">
+              <p className="text-sm text-line">
+                Rate your skills for <strong className="text-highlight">{goals.target_role}</strong>.
+              </p>
+              <span className="text-xs font-medium bg-surface px-3 py-1 rounded-full text-on-surface-variant">
+                {currentSkillIndex + 1} / {allSkills.length}
+              </span>
+            </div>
+            
+            <div className="bg-surface-card border border-border-subtle rounded-3xl p-8 shadow-lg text-center mt-6">
+              <p className="text-xs uppercase tracking-widest text-highlight/80 mb-4">{allSkills[currentSkillIndex].category}</p>
+              <h2 className="text-2xl font-bold text-paper mb-10">{allSkills[currentSkillIndex].label}</h2>
+              <div className="max-w-md mx-auto">
+                <ConfidenceRating
+                  label=""
+                  value={confidence[allSkills[currentSkillIndex].key] ?? 25}
+                  onChange={(v) => setConfidence({ ...confidence, [allSkills[currentSkillIndex].key]: v })}
+                />
               </div>
-            ))}
-            <button type="button" onClick={saveRoleSkills} className="sticky bottom-3 z-10 flex w-full items-center justify-center gap-2 rounded-2xl bg-highlight px-4 py-3 text-base font-semibold text-ink shadow-lg shadow-ink/30 transition hover:bg-primary-fixed">
-              Continue <ChevronRight className="h-4 w-4" />
-            </button>
+            </div>
+            
+            <div className="flex items-center gap-3 mt-8">
+              <button
+                type="button"
+                onClick={() => setCurrentSkillIndex(Math.max(0, currentSkillIndex - 1))}
+                disabled={currentSkillIndex === 0}
+                className="flex items-center justify-center gap-2 rounded-2xl bg-surface px-4 py-3 text-sm font-semibold text-paper shadow-sm transition hover:bg-border-subtle disabled:opacity-50 flex-1"
+              >
+                Back
+              </button>
+              
+              {currentSkillIndex < allSkills.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setCurrentSkillIndex(currentSkillIndex + 1)}
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-highlight px-4 py-3 text-sm font-semibold text-ink shadow-lg shadow-ink/30 transition hover:bg-primary-fixed flex-1"
+                >
+                  Next <ChevronRight className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={saveRoleSkills}
+                  disabled={saving}
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-highlight px-4 py-3 text-sm font-semibold text-ink shadow-lg shadow-ink/30 transition hover:bg-primary-fixed disabled:opacity-70 flex-1"
+                >
+                  {saving ? 'Saving...' : 'Continue'} <ChevronRight className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
         )}
 

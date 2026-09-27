@@ -134,7 +134,22 @@ QUIZ_TAXONOMY = {
         "Operating Systems",
         "DSA"
     ],
-    "DSA": [],
+        "DSA": [
+        "Arrays & Strings",
+        "Linked Lists",
+        "Stacks & Queues",
+        "Trees & BST",
+        "Graphs",
+        "Heaps & Priority Queues",
+        "Hash Tables",
+        "Sorting & Searching",
+        "Dynamic Programming",
+        "Greedy Algorithms",
+        "Backtracking",
+        "Bit Manipulation",
+        "Two Pointers",
+        "Sliding Window"
+    ],
     "Data Analytics & BI": [
         "Tableau",
         "Power BI",
