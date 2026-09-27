@@ -391,7 +391,8 @@ def build_mentor_context(db: Session, user: User) -> dict:
     key_to_label = get_key_to_label(role)
 
     weak = (
-        db.query(UserSkillAssessment)
+        db.query(UserSkillAssessment, Skill.skill_key)
+        .join(Skill, UserSkillAssessment.skill_id == Skill.id)
         .filter(
             UserSkillAssessment.user_id == user.id,
             UserSkillAssessment.role == role,
@@ -400,18 +401,19 @@ def build_mentor_context(db: Session, user: User) -> dict:
         .limit(5)
         .all()
     )
-    weak_areas = [key_to_label.get(a.skill_key, a.skill_key.replace("_", " ").title()) for a in weak]
+    weak_areas = [key_to_label.get(skill_key, skill_key.replace("_", " ").title()) for usa, skill_key in weak]
 
     # Build full skill profile grouped by category for rich AI context
     all_assessments = (
-        db.query(UserSkillAssessment)
+        db.query(UserSkillAssessment, Skill.skill_key)
+        .join(Skill, UserSkillAssessment.skill_id == Skill.id)
         .filter(
             UserSkillAssessment.user_id == user.id,
             UserSkillAssessment.role == role,
         )
         .all()
     )
-    confidence_map = {row.skill_key: int(row.self_rated_confidence) for row in all_assessments}
+    confidence_map = {skill_key: int(usa.self_rated_confidence) for usa, skill_key in all_assessments}
 
     skill_profile: dict[str, dict[str, int]] = {}
     for category_name, skills in ROLE_ASSESSMENT_SKILLS.get(role, {}).items():
@@ -421,8 +423,8 @@ def build_mentor_context(db: Session, user: User) -> dict:
         }
 
     strong_areas = [
-        key_to_label.get(a.skill_key, a.skill_key.replace("_", " ").title())
-        for a in all_assessments if a.self_rated_confidence >= 75
+        key_to_label.get(skill_key, skill_key.replace("_", " ").title())
+        for usa, skill_key in all_assessments if usa.self_rated_confidence >= 75
     ]
 
     from app.models.hub_progress import UserCodingProgress

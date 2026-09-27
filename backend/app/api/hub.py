@@ -307,7 +307,6 @@ def start_quiz_session(
         attempted_ids = (
             db.query(UserQuizQuestionAttempt.question_id)
             .filter(UserQuizQuestionAttempt.user_id == current_user.id)
-            .subquery()
         )
         query = query.filter(~QuizQuestion.id.in_(attempted_ids))
     
