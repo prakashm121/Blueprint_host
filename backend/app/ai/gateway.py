@@ -478,9 +478,6 @@ class AIGateway:
             "top_p": settings.GEMINI_TOP_P,
             "top_k": settings.GEMINI_TOP_K,
             "max_output_tokens": max_tokens,
-            "automatic_function_calling": genai.types.AutomaticFunctionCallingConfig(
-                disable=True
-            ),
         }
         
         if task in ("mentor_response", "teacher_response"):
