@@ -145,57 +145,12 @@ export default function VaultDashboard() {
 
   const createMutation = useMutation({
     mutationFn: async (note) => {
-      const {
-        data: userData,
-        error: userError
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        throw userError;
-      }
-
-      if (!userData?.user) {
-        throw new Error('User is not authenticated.');
-      }
-
-      const {
-        data: userRow,
-        error: userRowError
-      } = await supabase
-        .from('users')
-        .select('id')
-        .eq('supabase_id', userData.user.id)
-        .single();
-
-      if (userRowError) {
-        throw userRowError;
-      }
-
-      if (!userRow) {
-        throw new Error('User record not found.');
-      }
-
-      const {
-        data,
-        error
-      } = await supabase
-        .from('vault_items')
-        .insert([
-          {
-            user_id: userRow.id,
-            item_type: 'PERSONAL_NOTE',
-            reference_type: 'NONE',
-            title: note.title.trim(),
-            content: note.content.trim()
-          }
-        ])
-        .select();
-
-      if (error) {
-        throw error;
-      }
-
-      return data;
+      const res = await api.post('/api/v1/vault/', {
+        item_type: 'PERSONAL_NOTE',
+        title: note.title.trim(),
+        content: note.content.trim()
+      });
+      return res.data;
     },
 
     onSuccess: () => {

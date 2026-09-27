@@ -24,9 +24,12 @@ def get_vault_items(
         return cached
 
     query = db.query(VaultItem).filter(
-        VaultItem.user_id == current_user.id,
-        VaultItem.id > last_id
-    ).order_by(VaultItem.id.asc()).limit(limit).all()
+        VaultItem.user_id == current_user.id
+    )
+    if last_id > 0:
+        query = query.filter(VaultItem.id < last_id)
+        
+    query = query.order_by(VaultItem.id.desc()).limit(limit).all()
     
     items = []
     for r in query:

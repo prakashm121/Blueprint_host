@@ -81,7 +81,7 @@ async def upload_resume(
     )
     if new_today >= settings.RESUME_MAX_NEW_UPLOADS_PER_DAY:
         raise too_many_requests(
-            "You can analyse one new resume per day. Re-uploading the same file is free, "
+            "You can analyse 2 new resumes per day. Re-uploading the same file is free, "
             "or try a new version tomorrow.",
             seconds_until_ist_midnight(),
         )
