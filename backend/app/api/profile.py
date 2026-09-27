@@ -32,7 +32,7 @@ class ProfileUpdateRequest(BaseModel):
     college_name: Optional[str] = Field(None, max_length=200)
     degree: Optional[str] = Field(None, max_length=100)
     specialization: Optional[str] = Field(None, max_length=100)
-    graduation_year: Optional[int] = None
+    graduation_year: Optional[int] = Field(None, ge=1980, le=2040)
     cgpa: Optional[float] = Field(None, ge=0.0, le=10.0)
 
     # Career goals — these live on the User model, not Profile

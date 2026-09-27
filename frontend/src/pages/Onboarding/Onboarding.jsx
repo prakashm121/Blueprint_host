@@ -263,23 +263,39 @@ export default function Onboarding() {
           <form onSubmit={saveProfile} className="grid gap-5">
             {[
               { label: 'College / University', name: 'college_name', type: 'text', required: true },
-              { label: 'Degree (e.g., B.Tech)', name: 'degree', type: 'text' },
-              { label: 'Graduation Year', name: 'graduation_year', type: 'number' },
-              { label: 'Current CGPA', name: 'cgpa', type: 'number', step: '0.01' },
+              { label: 'Degree', name: 'degree', type: 'select', options: ['B.Tech', 'M.Tech', 'B.E.', 'B.Sc.', 'M.Sc.', 'BCA', 'MCA', 'Other'] },
+              { label: 'Graduation Year', name: 'graduation_year', type: 'number', min: 1980, max: 2040 },
+              { label: 'Current CGPA', name: 'cgpa', type: 'number', step: '0.01', min: 0, max: 10 },
             ].map((field) => (
               <label key={field.name} className="block text-sm font-medium text-paper">
                 {field.label}
-                <input
-                  type={field.type}
-                  step={field.step}
-                  className="mt-2 w-full rounded-2xl border border-border-subtle bg-background-deep px-4 py-3 text-paper outline-none transition focus:border-primary-fixed focus:ring-2 focus:ring-highlight/20"
-                  value={profileData[field.name]}
-                  onChange={(e) => setProfileData({
-                    ...profileData,
-                    [field.name]: field.type === 'number' ? (e.target.value ? Number(e.target.value) : '') : e.target.value,
-                  })}
-                  required={field.required}
-                />
+                {field.type === 'select' ? (
+                  <select
+                    className="mt-2 w-full rounded-2xl border border-border-subtle bg-background-deep px-4 py-3 text-paper outline-none transition focus:border-primary-fixed focus:ring-2 focus:ring-highlight/20"
+                    value={profileData[field.name]}
+                    onChange={(e) => setProfileData({ ...profileData, [field.name]: e.target.value })}
+                    required={field.required}
+                  >
+                    <option value="">Select a degree</option>
+                    {field.options.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type={field.type}
+                    step={field.step}
+                    min={field.min}
+                    max={field.max}
+                    className="mt-2 w-full rounded-2xl border border-border-subtle bg-background-deep px-4 py-3 text-paper outline-none transition focus:border-primary-fixed focus:ring-2 focus:ring-highlight/20"
+                    value={profileData[field.name]}
+                    onChange={(e) => setProfileData({
+                      ...profileData,
+                      [field.name]: field.type === 'number' ? (e.target.value ? Number(e.target.value) : '') : e.target.value,
+                    })}
+                    required={field.required}
+                  />
+                )}
               </label>
             ))}
 

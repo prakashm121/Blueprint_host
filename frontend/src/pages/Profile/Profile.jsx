@@ -217,7 +217,17 @@ export default function Profile() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className={labelClass}>Degree <span className="text-on-surface-variant/50 normal-case font-normal">(optional)</span></label>
-                    <input className={inputClass} value={form.degree} onChange={e => set('degree', e.target.value)} placeholder="B.Tech, M.Tech…" />
+                    <select className={inputClass} value={form.degree} onChange={e => set('degree', e.target.value)}>
+                      <option value="">Select Degree...</option>
+                      <option value="B.Tech">B.Tech</option>
+                      <option value="M.Tech">M.Tech</option>
+                      <option value="B.E.">B.E.</option>
+                      <option value="B.Sc.">B.Sc.</option>
+                      <option value="M.Sc.">M.Sc.</option>
+                      <option value="BCA">BCA</option>
+                      <option value="MCA">MCA</option>
+                      <option value="Other">Other</option>
+                    </select>
                   </div>
                   <div>
                     <label className={labelClass}>Specialization <span className="text-on-surface-variant/50 normal-case font-normal">(optional)</span></label>
