@@ -73,7 +73,7 @@ export default function Planner() {
   const targetRole = profile?.target_role || "Software Engineer";
   const loading = loadingPlan;
 
-  const fetchPlan = () => queryClient.invalidateQueries(['plannerPlan']);
+  const fetchPlan = () => queryClient.invalidateQueries({ queryKey: ['plannerPlan'] });
 
   const generatePlan = async () => {
     setCreating(true);
@@ -110,7 +110,7 @@ export default function Planner() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries(['plannerPlan']);
+      queryClient.invalidateQueries({ queryKey: ['plannerPlan'] });
     }
   });
 
@@ -131,7 +131,7 @@ export default function Planner() {
     }
     try {
       await api.delete(`/api/v1/planner/tasks/${taskId}`);
-      queryClient.invalidateQueries(['plannerPlan']);
+      queryClient.invalidateQueries({ queryKey: ['plannerPlan'] });
     } catch (err) {
       console.error(err);
       // Rollback on failure

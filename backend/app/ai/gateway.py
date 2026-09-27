@@ -165,6 +165,7 @@ class AIGateway:
             "teacher_response",
             "dsa",
             "interview_qa",
+            "quiz_generation",
         ):
             # Combine both lists so it tries premium models first, then falls back to lite
             base_models = settings.GEMINI_MENTOR_MODELS

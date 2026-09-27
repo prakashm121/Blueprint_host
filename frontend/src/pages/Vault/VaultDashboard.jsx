@@ -5,6 +5,7 @@ import {
   useQueryClient
 } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
+import { api } from '../../api';
 import { usePresence } from '../../lib/motion';
 
 const TYPE_METADATA = {
@@ -69,35 +70,8 @@ export default function VaultDashboard() {
   });
 
   const fetchVaultItems = async ({ pageParam = 0 }) => {
-    let query = supabase
-      .from('vault_items')
-      .select('*');
-
-    if (pageParam > 0) {
-      query = query.lt('id', pageParam);
-    }
-
-    query = query
-      .order('id', { ascending: false })
-      .limit(20);
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw error;
-    }
-
-    const items = data || [];
-
-    const next_cursor =
-      items.length === 20
-        ? items[items.length - 1].id
-        : null;
-
-    return {
-      items,
-      next_cursor
-    };
+    const { data } = await api.get(`/api/v1/vault/?last_id=${pageParam}&limit=20`);
+    return data;
   };
 
   const {
@@ -112,7 +86,8 @@ export default function VaultDashboard() {
     queryFn: fetchVaultItems,
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    staleTime: 5 * 60 * 1000
+    staleTime: 0,
+    gcTime: 60 * 1000,
   });
 
   const items = data
@@ -123,14 +98,24 @@ export default function VaultDashboard() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
-      const { error } = await supabase
-        .from('vault_items')
-        .delete()
-        .eq('id', id);
+      await api.delete(`/api/v1/vault/${id}`);
+    },
+    
+    onMutate: async (id) => {
+      await queryClient.cancelQueries(['vaultItems']);
+      const previousItems = queryClient.getQueryData(['vaultItems']);
 
-      if (error) {
-        throw error;
+      if (previousItems && previousItems.pages) {
+        queryClient.setQueryData(['vaultItems'], {
+          ...previousItems,
+          pages: previousItems.pages.map(page => ({
+            ...page,
+            items: page.items.filter(item => item.id !== id)
+          }))
+        });
       }
+
+      return { previousItems };
     },
 
     onSuccess: () => {
@@ -139,9 +124,18 @@ export default function VaultDashboard() {
       });
     },
 
-    onError: (error) => {
+    onError: (error, variables, context) => {
       console.error('Delete vault item error:', error);
       alert('Failed to delete the item.');
+      if (context?.previousItems) {
+        queryClient.setQueryData(['vaultItems'], context.previousItems);
+      }
+    },
+    
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['vaultItems']
+      });
     }
   });
 
@@ -389,7 +383,7 @@ export default function VaultDashboard() {
 
                       <button
                         onClick={() => handleDelete(item.id)}
-                        disabled={deleteMutation.isPending}
+                        disabled={false} /* Disabled lock removed for optimistic feel */
                         className="text-on-surface-variant hover:text-rose-400 transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 p-1 disabled:opacity-50"
                         title="Delete from Vault"
                       >

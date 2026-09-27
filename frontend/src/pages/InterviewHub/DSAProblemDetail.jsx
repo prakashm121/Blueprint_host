@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import DOMPurify from 'dompurify';
 import { supabase } from '../../lib/supabase';
 import { api } from '../../api';
@@ -14,13 +14,13 @@ const DIFF_COLORS = {
 export default function DSAProblemDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: problem, isLoading: loading, error: queryError } = useQuery({
     queryKey: ['dsaProblem', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('dsa_problems').select('*').eq('id', id).single();
-      if (error) throw error;
-      return data;
+      const res = await api.get(`/api/v1/hub/coding/${id}`);
+      return res.data;
     },
     staleTime: 5 * 60 * 1000,
   });
@@ -30,6 +30,25 @@ export default function DSAProblemDetail() {
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkVaultId, setBookmarkVaultId] = useState(null);
   const [solved, setSolved] = useState(false);
+
+  // Bulk fetch DSA saved ids — one call per page load, shared via React Query cache
+  const { data: dsaSavedIds } = useQuery({
+    queryKey: ['vaultSavedIds', 'DSA'],
+    queryFn: async () => {
+      const r = await api.get('/api/v1/vault/saved-ids?reference_type=DSA');
+      return r.data;
+    },
+    staleTime: 2 * 60 * 1000,
+  });
+
+  // Hydrate bookmark state when the saved-ids map or problem id changes
+  useEffect(() => {
+    if (dsaSavedIds !== undefined && id) {
+      const vid = dsaSavedIds[String(id)] ?? null;
+      setBookmarked(vid !== null);
+      setBookmarkVaultId(vid);
+    }
+  }, [dsaSavedIds, id]);
 
   // The problem itself is loaded by the query above; this only restores the user's solved status.
   useEffect(() => {
@@ -72,6 +91,7 @@ export default function DSAProblemDetail() {
         setBookmarkVaultId(null);
         try {
           await api.delete(`/api/v1/vault/${oldId}`);
+          queryClient.invalidateQueries({ queryKey: ['vaultSavedIds', 'DSA'] });
         } catch {
           setBookmarked(true); setBookmarkVaultId(oldId);
         }
@@ -86,6 +106,7 @@ export default function DSAProblemDetail() {
             content: `Difficulty: ${problem.difficulty} | Topics: ${(problem.topic_tags || []).join(', ')}`,
           });
           setBookmarkVaultId(res.data.id);
+          queryClient.invalidateQueries({ queryKey: ['vaultSavedIds', 'DSA'] });
         } catch {
           setBookmarked(false);
         }

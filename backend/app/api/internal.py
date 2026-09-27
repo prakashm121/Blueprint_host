@@ -13,6 +13,11 @@ from fastapi import APIRouter, Header, HTTPException
 
 from app.core.config import settings
 from app.workers.scheduler_jobs import scan_due_planner_tasks
+from app.db.session import get_db
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from app.services.quiz_generator import bulk_restock_questions
+
 
 logger = logging.getLogger("placementos.api.internal")
 
@@ -35,3 +40,16 @@ def trigger_scan_planner_reminders(
     _verify_internal_secret(x_internal_secret)
     sent = scan_due_planner_tasks()
     return {"success": True, "reminders_sent": sent}
+
+
+@router.post("/quiz-restock")
+async def trigger_quiz_restock(
+    x_internal_secret: str = Header(..., alias="X-Internal-Secret"),
+    db: Session = Depends(get_db)
+):
+    if not hmac.compare_digest(x_internal_secret, settings.INTERNAL_TRIGGER_SECRET):
+        raise HTTPException(status_code=401, detail="Invalid internal secret")
+    
+    logger.info("Internal trigger: quiz restock started")
+    result = await bulk_restock_questions(db, max_scopes=1)
+    return result

@@ -7,6 +7,21 @@ import quizData from '../../data/quiz_filters.json';
 
 const SECTION_ICONS = {
   'AI & ML': { icon: 'psychology', desc: 'Neural networks, training optimization, and modeling vectors.' },
+  'Backend': { icon: 'dns', desc: 'Server architecture, API design, and asynchronous data processing.' },
+  'Behavioral': { icon: 'handshake', desc: 'Interpersonal communication, leadership, and conflict resolution.' },
+  'Blockchain': { icon: 'currency_bitcoin', desc: 'Decentralized ledgers, smart contracts, and Web3 paradigms.' },
+  'Core Subjects': { icon: 'menu_book', desc: 'Fundamental computer science theory, OS, and object-oriented principles.' },
+  'DSA': { icon: 'account_tree', desc: 'Algorithmic efficiency, graph theory, and data structure manipulation.' },
+  'Data Analytics & BI': { icon: 'insights', desc: 'Data visualization, business intelligence, and statistical reporting.' },
+  'Database': { icon: 'database', desc: 'SQL/NoSQL structures, query optimization, and data modeling.' },
+  'DevOps': { icon: 'cloud_sync', desc: 'Infrastructure orchestration, continuous integration, and containerization.' },
+  'Emerging Tech': { icon: 'memory', desc: 'IoT integration, quantum computing concepts, and augmented reality.' },
+  'Frontend': { icon: 'web', desc: 'Client-side rendering, component states, and responsive UI design.' },
+  'Programming Languages': { icon: 'code_blocks', desc: 'Syntax paradigms, memory management, and compilation workflows.' },
+  'Security & Networking': { icon: 'security', desc: 'Protocol validation, penetration testing, and cryptography.' },
+  'System Design': { icon: 'architecture', desc: 'Scalable infrastructure, load balancing, and microservices architecture.' },
+  'Testing & QA': { icon: 'bug_report', desc: 'Test automation frameworks, quality assurance, and unit testing.' },
+  'UI/UX & Design': { icon: 'design_services', desc: 'User experience flows, wireframing, and interactive prototyping.' },
   'DevOps Engineer': { icon: 'terminal', desc: 'CI/CD pipeline matrices, infrastructure as code, and cloud architectures.' },
   'React Engineer': { icon: 'code', desc: 'Dynamic state synchronization, custom hooks, and layout rendering optimization.' },
   'SAP Engineer': { icon: 'layers', desc: 'Enterprise data architecture, ABAP logic, and business workflows.' },
@@ -30,6 +45,66 @@ export default function QuizEngine() {
   const [selectedAnswers, setSelectedAnswers] = useState({});   // { [idx]: "A"|"B"|"C"|"D" }
   const [quizCompleted, setQuizCompleted] = useState(false);
 
+  const [generating, setGenerating] = useState(false);
+  const [genStatus, setGenStatus] = useState("");
+
+  const handleGenerateQuestions = async () => {
+    setGenerating(true);
+    setGenStatus("Initializing AI Generation...");
+    setError(null);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch("http://127.0.0.1:8000/api/v1/hub/quiz/generate/stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          section: section || null,
+          topic: topic || null,
+          difficulty: difficulty || "Medium",
+          role: null,
+          category: null,
+          skill: null
+        })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let done = false;
+      while (!done) {
+        const { value, done: doneReading } = await reader.read();
+        done = doneReading;
+        const chunkValue = decoder.decode(value, { stream: true });
+        if (chunkValue) {
+          const lines = chunkValue.split("\n\n");
+          for (let line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.substring(6));
+                if (data.status) {
+                  setGenStatus(data.status);
+                  if (data.status === "complete") {
+                    setGenerating(false);
+                    startQuizSession(); 
+                  }
+                } else if (data.error) {
+                  setError(data.error);
+                  setGenerating(false);
+                }
+              } catch(e) {}
+            }
+          }
+        }
+      }
+    } catch (e) {
+      setError("Generation request failed.");
+      setGenerating(false);
+    }
+  };
+
+
   // Submission states
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
@@ -45,7 +120,7 @@ export default function QuizEngine() {
 
   const availableTopics = section && quizData.section_topics[section]
     ? quizData.section_topics[section]
-    : Object.values(quizData.section_topics).flat();
+    : [...new Set(Object.values(quizData.section_topics).flat())].sort();
 
   const updateParam = (key, val) => {
     const newParams = new URLSearchParams(searchParams);
@@ -75,7 +150,7 @@ export default function QuizEngine() {
       .then(res => {
         const fetchedItems = res.data?.questions || [];
         if (fetchedItems.length === 0) {
-          setError('No evaluation nodes matching your configured vectors were located.');
+          setError('OUT_OF_STOCK');
         } else {
           setQuestions(fetchedItems);
           setSelectedAnswers({});
@@ -173,12 +248,12 @@ export default function QuizEngine() {
   return (
     <div className="bg-background-deep text-on-surface font-body-base antialiased min-h-screen">
       <div className="flex flex-col min-h-screen">
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto space-y-3 sm:space-y-6">
 
           {/* ── SubHeader ── */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 sm:gap-4 pb-2 sm:pb-4 border-b border-border-subtle">
             <div>
-              <h2 className="text-2xl font-bold text-on-surface tracking-tight">Quiz Engine</h2>
+              <h1 className="text-xl sm:text-2xl font-bold text-on-surface tracking-tight">Quiz Engine</h1>
               <p className="text-xs text-on-surface-variant">Calibrate operational competency profiles dynamically.</p>
             </div>
           </div>
@@ -188,7 +263,37 @@ export default function QuizEngine() {
             {/* ── Primary Workspace ── */}
             <div className="lg:col-span-8 space-y-4">
 
-              {error && (
+                            {error && error === 'OUT_OF_STOCK' && !generating && (
+                <div className="bg-surface-container p-6 rounded-2xl border border-primary/20 text-center">
+                  <span className="material-symbols-outlined text-4xl text-on-surface/40 mb-2">inventory_2</span>
+                  <h3 className="text-xl font-bold text-on-surface mb-2">Out of Stock</h3>
+                  <p className="text-on-surface/60 mb-6 max-w-sm mx-auto">
+                    There are no evaluation nodes matching these specific vectors. 
+                    Would you like to dynamically synthesize new ones using AI?
+                  </p>
+                  <button
+                    onClick={handleGenerateQuestions}
+                    className="bg-primary hover:bg-primary-hover text-on-primary font-bold py-3 px-8 rounded-xl transition-colors inline-flex items-center gap-2"
+                  >
+                    <span className="material-symbols-outlined">auto_awesome</span>
+                    Auto-Generate with AI
+                  </button>
+                </div>
+              )}
+
+              {generating && (
+                <div className="bg-surface-container p-6 rounded-2xl border border-primary/20 text-center">
+                  <div className="animate-spin text-primary mx-auto mb-4 w-12 h-12 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-4xl">autorenew</span>
+                  </div>
+                  <h3 className="text-xl font-bold text-on-surface mb-2">Synthesizing Nodes</h3>
+                  <p className="text-primary font-mono text-sm animate-pulse">
+                    {genStatus}
+                  </p>
+                </div>
+              )}
+
+              {error && error !== 'OUT_OF_STOCK' && (
                 <div className="text-center py-6 text-rose-400 bg-rose-500/5 rounded-xl border border-rose-500/10 text-sm">
                   {error}
                 </div>
@@ -203,13 +308,13 @@ export default function QuizEngine() {
               ) : !quizStarted ? (
 
                 /* â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull; STEP 1: LOBBY â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull; */
-                <div className="space-y-6 bg-surface-container border border-border-subtle rounded-2xl p-6 shadow-sm">
+                <div className="h-[calc(100dvh-8rem)] lg:h-[calc(100dvh-10rem)] flex flex-col min-h-0 space-y-6 bg-surface-container border border-border-subtle rounded-2xl px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4 shadow-sm">
                   <div>
                     <h3 className="text-lg font-bold text-on-surface">Targeted Training Setup</h3>
                     <p className="text-xs text-on-surface-variant">Select your primary focus trajectory to benchmark operational precision metrics.</p>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 pb-8 grid grid-cols-1 sm:grid-cols-2 gap-3 content-start">
                     {quizData.sections.map((secName) => {
                       const isActive = section === secName;
                       const designConfig = SECTION_ICONS[secName] || { icon: 'school', desc: 'Verify specialized domain criteria matrices.' };
@@ -228,14 +333,15 @@ export default function QuizEngine() {
                             </div>
                             <h4 className="font-semibold text-xs text-on-surface">{secName}</h4>
                           </div>
-                          <p className="text-[11px] text-on-surface-variant leading-relaxed">{designConfig.desc}</p>
+                          <p className="hidden sm:block text-xs text-on-surface-variant leading-relaxed">{designConfig.desc}</p>
                         </div>
                       );
                     })}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                    <div className="space-y-1.5">
+                  <div className="shrink-0 space-y-3 sm:space-y-4 pt-3 sm:pt-4 border-t border-border-subtle">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                    <div className="flex flex-col justify-end space-y-1.5">
                       <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
                         Sub-Topic Filter {section && `(${section})`}
                       </label>
@@ -245,8 +351,8 @@ export default function QuizEngine() {
                         {availableTopics.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Target Complexity Profile</label>
+                    <div className="flex flex-col justify-end space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Target Complexity</label>
                       <select value={difficulty} onChange={e => updateParam('difficulty', e.target.value)}
                         className="w-full bg-surface-container-low border border-border-subtle rounded-xl px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all">
                         <option value="">All Thresholds</option>
@@ -257,25 +363,29 @@ export default function QuizEngine() {
                     </div>
                   </div>
 
-                  <div className="flex gap-3">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     <button onClick={() => startQuizSession(false)}
-                      className="flex-1 py-3 bg-primary text-on-primary text-xs font-bold rounded-xl hover:brightness-110 shadow-sm transition-all flex items-center justify-center gap-2">
+                      className="w-full py-2 sm:py-3 px-1 sm:px-2 bg-primary text-on-primary text-[10px] sm:text-xs font-bold rounded-xl hover:brightness-110 shadow-sm transition-all flex items-center justify-center gap-1 sm:gap-2">
                       <span className="material-symbols-outlined text-base">rocket_launch</span>
-                      Initialize Evaluation Session
+                      <span className="hidden sm:inline">Initialize Evaluation Session</span>
+                      <span className="sm:hidden leading-tight">Start Session</span>
                     </button>
                     <button onClick={() => startQuizSession(true)}
-                      className="flex-1 py-3 bg-surface-container-high border border-border-subtle text-on-surface text-xs font-bold rounded-xl hover:bg-surface-container-highest shadow-sm transition-all flex items-center justify-center gap-2">
+                      className="w-full py-2 sm:py-3 px-1 sm:px-2 bg-transparent border border-primary/30 text-primary text-[10px] sm:text-xs font-bold rounded-xl hover:bg-primary/10 shadow-sm transition-all flex items-center justify-center gap-1 sm:gap-2 text-center">
                       <span className="material-symbols-outlined text-base">replay</span>
-                      Practice Again (Include Attempted)
+                      <span className="hidden sm:inline">Practice Again (Include Attempted)</span>
+                      <span className="sm:hidden leading-tight">Practice Again</span>
                     </button>
                   </div>
                 </div>
 
+              </div>
+
               ) : !quizCompleted ? (
 
                 /* â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull; STEP 2: ACTIVE QUIZ â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull;â&bull; */
-                <div className="bg-surface-container border border-border-subtle rounded-2xl p-6 shadow-sm space-y-6">
-                  <div className="flex justify-between items-center border-b border-border-subtle/50 pb-4">
+                <div className="h-[calc(100dvh-7.5rem)] lg:h-[calc(100dvh-10rem)] flex flex-col min-h-0 bg-surface-container border border-border-subtle rounded-2xl p-4 sm:p-6 shadow-sm space-y-0">
+                  <div className="shrink-0 flex justify-between items-center border-b border-border-subtle/50 pb-3 sm:pb-4 mb-4 sm:mb-6">
                     <div className="space-y-1">
                       <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider rounded-md border border-primary/20">
                         {questions[currentIdx]?.section || 'Core Spec'}
@@ -289,7 +399,8 @@ export default function QuizEngine() {
                     </span>
                   </div>
 
-                  <h3 key={`q-${currentIdx}`} className="text-base font-semibold leading-relaxed text-on-surface" style={{ animation: 'list-in var(--dur-3) var(--ease-settle) backwards' }}>
+                  <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 space-y-6 pb-2">
+                    <h3 key={`q-${currentIdx}`} className="text-base font-semibold leading-relaxed text-on-surface" style={{ animation: 'list-in var(--dur-3) var(--ease-settle) backwards' }}>
                     {questions[currentIdx]?.question}
                   </h3>
 
@@ -326,7 +437,9 @@ export default function QuizEngine() {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between pt-4 border-t border-border-subtle/50">
+                  </div>
+
+                  <div className="shrink-0 flex items-center justify-between pt-3 sm:pt-4 mt-4 sm:mt-6 border-t border-border-subtle/50">
                     <button disabled={currentIdx === 0} onClick={() => setCurrentIdx(prev => prev - 1)}
                       className="px-4 py-2 bg-surface-container-high border border-border-subtle text-xs font-semibold rounded-xl text-on-surface-variant hover:text-on-surface disabled:opacity-30 transition-all flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-sm">arrow_back</span> Back
@@ -518,7 +631,7 @@ export default function QuizEngine() {
             </div>
 
             {/* ── Sidebar ── */}
-            <aside className="lg:col-span-4 space-y-4">
+            <aside className={`lg:col-span-4 space-y-4 ${!quizStarted ? 'hidden lg:block' : ''}`}>
               <section className="bg-surface-container border border-border-subtle rounded-xl p-5 shadow-sm">
                 <div className="flex justify-between items-center mb-4">
                   <div>

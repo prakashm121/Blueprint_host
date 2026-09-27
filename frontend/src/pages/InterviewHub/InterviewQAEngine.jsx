@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { api } from '../../api';
 import qaData from '../../data/qa_filters.json';
@@ -53,19 +53,14 @@ export default function InterviewQAEngine() {
   };
 
   const fetchQuestions = async ({ pageParam = 0 }) => {
-    let query = supabase.from('interview_questions').select('*');
-    if (pageParam > 0) query = query.gt('id', pageParam);
-    if (activeRole) query = query.contains('roles', [activeRole]);
-    if (activeCategory) query = query.eq('category', activeCategory);
-    if (activeSkill) query = query.eq('skill', activeSkill);
-    if (activeDifficulty) query = query.eq('difficulty', activeDifficulty);
-    
-    query = query.order('id', { ascending: true }).limit(20);
-    const { data, error } = await query;
-    if (error) throw error;
-    
-    const next_cursor = data.length === 20 ? data[19].id : null;
-    return { items: data, next_cursor };
+    const params = new URLSearchParams({ page: pageParam, limit: 20 });
+    if (activeRole) params.append('role', activeRole);
+    if (activeCategory) params.append('category', activeCategory);
+    if (activeSkill) params.append('skill', activeSkill);
+    if (activeDifficulty) params.append('difficulty', activeDifficulty);
+
+    const res = await api.get(`/api/v1/hub/interview?${params.toString()}`);
+    return res.data;
   };
 
   const {
@@ -106,7 +101,8 @@ export default function InterviewQAEngine() {
     if (q) {
       setSelectedQuestion(q);
       setRevealedAnswer(false);
-      setBookmarked(false);
+      // Do NOT reset bookmarked here — the useEffect keyed on selectedQuestion?.id
+      // will read the correct saved state from interviewSavedIds map.
       if (!isWide()) setDetailOpen(true);
     }
   };
@@ -157,6 +153,25 @@ export default function InterviewQAEngine() {
 
   const [bookmarkVaultId, setBookmarkVaultId] = useState(null);
 
+  // Bulk fetch saved INTERVIEW items — one call, cached via React Query
+  const { data: interviewSavedIds } = useQuery({
+    queryKey: ['vaultSavedIds', 'INTERVIEW'],
+    queryFn: async () => {
+      const r = await api.get('/api/v1/vault/saved-ids?reference_type=INTERVIEW');
+      return r.data;
+    },
+    staleTime: 2 * 60 * 1000,
+  });
+
+  // Re-hydrate bookmark state whenever the selected question or map changes
+  useEffect(() => {
+    if (interviewSavedIds !== undefined && selectedQuestion) {
+      const vid = interviewSavedIds[String(selectedQuestion.id)] ?? null;
+      setBookmarked(vid !== null);
+      setBookmarkVaultId(vid);
+    }
+  }, [interviewSavedIds, selectedQuestion?.id]);
+
   const saveMutation = useMutation({
     mutationFn: async ({ q, itemType, currentVaultId, isBookmarked }) => {
       if (isBookmarked && currentVaultId) {
@@ -191,7 +206,9 @@ export default function InterviewQAEngine() {
       if (!result.deleted) {
         setBookmarkVaultId(result.id);
       }
-      queryClient.invalidateQueries(['vaultItems']);
+      // Invalidate both the vault list AND the saved-ids map
+      queryClient.invalidateQueries({ queryKey: ['vaultItems'] });
+      queryClient.invalidateQueries({ queryKey: ['vaultSavedIds', 'INTERVIEW'] });
     }
   });
 
@@ -199,7 +216,7 @@ export default function InterviewQAEngine() {
   const markingReviewed = saveMutation.isPending;
 
   const handleBookmark = () => {
-    if (!selectedQuestion || bookmarking) return;
+    if (!selectedQuestion) return; // Removed bookmarking check to allow rapid toggle
     saveMutation.mutate({ q: selectedQuestion, itemType: 'BOOKMARK', currentVaultId: bookmarkVaultId, isBookmarked: bookmarked });
   };
 
@@ -233,7 +250,7 @@ export default function InterviewQAEngine() {
         <div className="flex gap-2">
           <button
             onClick={handleBookmark}
-            disabled={bookmarking}
+            disabled={false}
             data-tip={bookmarked ? 'Remove from vault' : 'Save to vault'}
             aria-label={bookmarked ? 'Remove from vault' : 'Save to vault'}
             className={`inline-flex h-10 w-10 items-center justify-center rounded-lg border transition-colors ${
@@ -320,14 +337,16 @@ export default function InterviewQAEngine() {
       <div className="mx-auto w-full max-w-7xl space-y-5 p-4 sm:p-6">
         {/* Header: title and filters */}
         <div className="space-y-3 border-b border-border-subtle pb-4">
-          <div className="flex flex-wrap items-end justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="type-title text-2xl text-on-surface">Interview Q&amp;A</h2>
-              <p className="text-sm text-on-surface-variant">Open-ended questions by role, topic and skill. Tap one to practise it.</p>
+              <h1 className="type-title text-2xl text-on-surface flex items-center gap-3">
+                Interview Q&amp;A
+                <span className="text-xs font-mono font-medium bg-surface-container-high px-2 py-0.5 rounded-md text-on-surface-variant border border-border-subtle tracking-tight">
+                  {loadingList ? 'Loading...' : `${questions.length}${hasMore ? '+' : ''} items`}
+                </span>
+              </h1>
+              <p className="text-sm text-on-surface-variant mt-1">Open-ended questions by role, topic and skill. Tap one to practise it.</p>
             </div>
-            <p className="text-sm tabular-nums text-on-surface-variant">
-              {loadingList ? 'Loading…' : `${questions.length}${hasMore ? '+' : ''} questions`}
-            </p>
           </div>
           {/* Phones: filters open in a popup */}
           <div className="md:hidden">
@@ -461,10 +480,11 @@ export default function InterviewQAEngine() {
                       {q.title}
                     </span>
                     <span className="flex items-center justify-between gap-2">
-                      <span className="max-w-[70%] truncate rounded border border-border-subtle bg-surface-container-low px-1.5 py-0.5 text-[11px] text-on-surface-variant">
+                      <span className="max-w-[70%] truncate rounded border border-border-subtle bg-surface-container-low px-1.5 py-0.5 text-xs text-on-surface-variant">
                         {q.skill ? `${q.category} / ${q.skill}` : q.category}
                       </span>
                       <span className={`text-xs font-semibold ${difficultyTone(q.difficulty)}`}>{q.difficulty}</span>
+                      <span className="material-symbols-outlined text-on-surface-variant text-sm transition-transform group-hover:translate-x-0.5\">chevron_right</span>
                     </span>
                   </button>
                 );

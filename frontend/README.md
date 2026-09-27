@@ -220,3 +220,8 @@ The backend rate-limits AI features (see the backend README). The UI surfaces th
 - **No Content-Security-Policy header yet.** The app needs three.js, Supabase and the Render API allowed, so a CSP has to be tested in a browser (start with `Content-Security-Policy-Report-Only`) rather than added blind.
 - Supabase's own client keeps its session in `localStorage`, so any script-injection bug could still read it — the sanitising and headers above are what reduce that risk.
 - Two data-fetching paths (backend API vs direct Supabase) with no single documented rule for which a new feature should use — see [Data fetching](#data-fetching--the-hybrid-model) for the current de facto pattern.
+
+
+### Recent Updates
+- **React Query v5 Fixes**: Updated `queryClient.invalidateQueries` syntax across the app (`Vault`, `DSAEngine`, `InterviewQAEngine`, `Planner`) to use the correct v5 object syntax (`{ queryKey: [...] }`).
+- **Vault Hydration**: Fixed a bug where `loadQuestionDetails` was blindly overwriting the bookmark state before the API returned. Updated the `VaultDashboard` to use `staleTime: 0` so that un-saving a bookmark instantly removes it from the list without showing stale cache data.

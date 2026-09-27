@@ -256,3 +256,10 @@ This repository is under active development. Open an issue or discussion before 
 
 - **Frontend**: React functional components, Tailwind for styling, React Query for server state.
 - **Backend**: FastAPI + Python type hints, Pydantic validation, Alembic migrations for any schema change.
+
+
+## Recent Updates
+
+- **Quiz AI Restock**: Automated quiz generation using Gemini. A GitHub Actions workflow (`.github/workflows/quiz-restock.yml`) runs every 6 hours and hits the internal `/api/v1/internal/quiz-restock` endpoint to generate, validate, and insert missing quiz scopes directly into the database without requiring a background Celery worker.
+- **Knowledge Vault**: Fixed duplicate bookmarks by adding a deduplication guard in the backend, removing buggy frontend hydration overrides, setting React Query `staleTime: 0` for real-time vault syncing, and updating the cache invalidation logic across all pages.
+- **Session Handling**: Clarified that Supabase handles token refreshing automatically in the frontend. Active sessions persist via local storage and do not forcibly expire unless explicitly configured in the Supabase Dashboard.

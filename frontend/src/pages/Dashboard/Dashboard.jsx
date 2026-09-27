@@ -121,15 +121,14 @@ export default function Dashboard() {
 
       // 4. Skills Confidence (20%)
       const { data: skills } = await supabase.from('user_skill_assessments')
-        .select('self_rated_confidence, ai_rated_confidence')
+        .select('self_rated_confidence')
         .eq('user_id', userRow.id);
         
       let skills_points = 0;
       if (skills && skills.length > 0) {
         // Average the confidence (out of 100) across all tracked skills
         const total_confidence = skills.reduce((acc, curr) => {
-           // Use AI rating if available, otherwise self-rated
-           const conf = curr.ai_rated_confidence || curr.self_rated_confidence || 0;
+           const conf = curr.self_rated_confidence || 0;
            return acc + conf;
         }, 0);
         const avg_confidence = total_confidence / skills.length;

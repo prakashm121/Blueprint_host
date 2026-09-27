@@ -1,6 +1,6 @@
-﻿import { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { api } from '../../api';
 import filterData from '../../data/filters.json';
@@ -14,9 +14,25 @@ const DIFFICULTY_COLORS = {
   HARD: { badge: 'bg-rose-500/10 text-rose-400 border-rose-500/20', icon: 'bg-rose-500/10 text-rose-400', iconHover: 'group-hover:bg-rose-500/20', symbol: 'memory' },
 };
 
-function ProblemCard({ problem, onOpen, companyFilter }) {
-  const [bookmarked, setBookmarked] = useState(false);
-  const [vaultId, setVaultId] = useState(null);
+function ProblemCard({ problem, onOpen, companyFilter, savedIds }) {
+  const queryClient = useQueryClient();
+  // Hydrate saved state from the parent-level bulk query (no per-card API call)
+  const [bookmarked, setBookmarked] = React.useState(() => {
+    const vid = savedIds?.[String(problem.id)] ?? null;
+    return vid !== null;
+  });
+  const [vaultId, setVaultId] = React.useState(() => {
+    return savedIds?.[String(problem.id)] ?? null;
+  });
+
+  React.useEffect(() => {
+    if (savedIds !== undefined) {
+      const vid = savedIds[String(problem.id)] ?? null;
+      setBookmarked(vid !== null);
+      setVaultId(vid);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedIds]);
 
   const handleBookmark = async (e) => {
     e.stopPropagation();
@@ -27,6 +43,7 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
         setVaultId(null);
         try {
           await api.delete(`/api/v1/vault/${oldVaultId}`);
+          queryClient.invalidateQueries({ queryKey: ['vaultSavedIds', 'DSA'] });
         } catch {
           setBookmarked(true);
           setVaultId(oldVaultId);
@@ -43,6 +60,7 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
             content: `Difficulty: ${problem.difficulty} | Topics: ${topics.join(', ')}`,
           });
           setVaultId(res.data.id);
+          queryClient.invalidateQueries({ queryKey: ['vaultSavedIds', 'DSA'] });
         } catch {
           setBookmarked(false);
         }
@@ -84,22 +102,22 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
         </div>
         
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <h4 className="font-semibold text-on-surface group-hover:text-primary transition-colors truncate max-w-[280px] md:max-w-md text-base leading-snug">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <h2 className="font-semibold text-on-surface group-hover:text-primary transition-colors text-base leading-snug">
               {problem.title}
-            </h4>
-            <span className={`px-2 py-0.5 ${colors.badge} text-[10px] font-bold uppercase tracking-wider rounded-md border`}>
+            </h2>
+            <span className={`px-2 py-0.5 ${colors.badge} text-xs font-bold uppercase tracking-wider rounded-md border`}>
               {problem.difficulty || 'EASY'}
             </span>
           </div>
           
-          <div className="flex flex-wrap items-center gap-y-1.5 gap-x-2 text-xs text-on-surface-variant">
+          <div className="flex flex-wrap items-center gap-y-3 gap-x-3 text-xs text-on-surface-variant">
             {topics.map(t => (
               <Link
                 key={t}
                 to={`/mentor?teach=${encodeURIComponent(t)}`}
                 onClick={e => e.stopPropagation()}
-                className="inline-flex items-center min-h-8 sm:min-h-0 px-2 py-0.5 bg-surface-container-low rounded border border-border-subtle text-[11px] hover:border-primary/40 hover:text-primary transition-colors"
+                className="inline-flex items-center min-h-8 sm:min-h-0 px-2 py-0.5 bg-surface-container-low rounded border border-border-subtle text-xs hover:border-primary/40 hover:text-primary transition-colors"
                 title={`Ask AI to teach: ${t}`}
               >
                 {t}
@@ -110,15 +128,15 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
           </div>
 
           {displayedCompanies.length > 0 && (
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className="material-symbols-outlined text-xs text-on-surface-variant/60 mr-0.5">business</span>
               {displayedCompanies.map((company, idx) => (
-                <span key={idx} className="bg-surface-container border border-border-subtle text-on-surface-variant text-[10px] font-medium px-2 py-0.5 rounded">
+                <span key={idx} className="bg-surface-container border border-border-subtle text-on-surface-variant text-xs font-medium px-2 py-0.5 rounded">
                   {company}
                 </span>
               ))}
               {remainingCompaniesCount > 0 && (
-                <span className="text-[10px] text-primary/80 font-semibold bg-primary/10 px-1.5 py-0.5 rounded">
+                <span className="text-xs text-primary/80 font-semibold bg-primary/10 px-1.5 py-0.5 rounded">
                   +{remainingCompaniesCount} more
                 </span>
               )}
@@ -191,19 +209,24 @@ export default function DSAEngine() {
     staleTime: 5 * 60 * 1000
   });
 
+  // One bulk call per page load — returns { "problemId": vaultId, ... }
+  const { data: dsaSavedIds } = useQuery({
+    queryKey: ['vaultSavedIds', 'DSA'],
+    queryFn: async () => {
+      const r = await api.get('/api/v1/vault/saved-ids?reference_type=DSA');
+      return r.data;
+    },
+    staleTime: 2 * 60 * 1000,
+  });
+
   const fetchProblems = async ({ pageParam = 0 }) => {
-    let query = supabase.from('dsa_problems').select('*');
-    if (pageParam > 0) query = query.gt('id', pageParam);
-    if (company && company !== "All") query = query.contains('companies', [company]);
-    if (topic && topic !== "All") query = query.contains('topic_tags', [topic]);
-    if (difficulty && difficulty !== "All") query = query.eq('difficulty', difficulty);
-    
-    query = query.order('id', { ascending: true }).limit(20);
-    const { data, error } = await query;
-    if (error) throw error;
-    
-    const next_cursor = data.length === 20 ? data[19].id : null;
-    return { items: data, next_cursor };
+    const params = new URLSearchParams({ page: pageParam, limit: 20 });
+    if (company && company !== "All") params.append('company', company);
+    if (topic && topic !== "All") params.append('topic', topic);
+    if (difficulty && difficulty !== "All") params.append('difficulty', difficulty);
+
+    const res = await api.get(`/api/v1/hub/coding?${params.toString()}`);
+    return res.data;
   };
 
   const {
@@ -241,13 +264,13 @@ export default function DSAEngine() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto flex flex-col gap-4 md:gap-6 min-h-0">
+    <div className="flex flex-col min-h-screen">
+      <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto flex flex-col gap-4 md:gap-6">
         
         {/* Main Title Header */}
         <div className="shrink-0 space-y-3 pb-4 border-b border-border-subtle">
           <div>
-            <h2 className="type-title text-2xl text-on-surface">Coding problems</h2>
+            <h1 className="type-title text-2xl text-on-surface">Coding problems</h1>
             <p className="text-sm text-on-surface-variant">Practise by topic, difficulty and company. Open a problem to solve it.</p>
           </div>
           {/* Phones: filters open in a popup */}
@@ -276,10 +299,10 @@ export default function DSAEngine() {
         </div>
 
         {/* Grid Layout */}
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 min-h-0">
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6">
             
             {/* Problems Stream View Column */}
-            <div className="lg:col-span-8 flex flex-col h-full space-y-4 min-h-0">
+            <div className="lg:col-span-8 flex flex-col space-y-4">
               
               {/* Larger screens: filters sit on the page */}
               <div className="hidden shrink-0 grid-cols-3 gap-2 rounded-xl border border-border-subtle bg-surface-container p-3 md:grid">
@@ -315,7 +338,7 @@ export default function DSAEngine() {
               </div>
 
               {/* Problem list — only this scrolls */}
-              <div className="stagger-list flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-1 pb-4">
+              <div className="stagger-list flex-1 space-y-3 pr-1 pb-4">
                 {error && (
                   <div className="text-center py-8 text-rose-400 bg-rose-500/5 rounded-xl border border-rose-500/10 text-sm">
                     Problems didn&rsquo;t load. Check your connection and refresh the page.
@@ -343,7 +366,7 @@ export default function DSAEngine() {
                 )}
 
                 {problems.map(p => (
-                  <ProblemCard key={p.id} problem={p} onOpen={id => navigate(`/interview-hub/dsa/${id}`)} companyFilter={company} />
+                  <ProblemCard key={p.id} problem={p} onOpen={id => navigate(`/interview-hub/dsa/${id}`)} companyFilter={company} savedIds={dsaSavedIds} />
                 ))}
 
                 <div ref={loaderRef} className="flex justify-center py-4">
@@ -361,7 +384,7 @@ export default function DSAEngine() {
             </div>
 
             {/* Stats sidebar — desktop only (mobile has compact strip above) */}
-            <aside className="hidden lg:flex lg:col-span-4 flex-col h-full overflow-y-auto custom-scrollbar space-y-4 pr-2">
+            <aside className="hidden lg:flex lg:col-span-4 flex-col space-y-4 pr-2 sticky top-6 self-start max-h-[calc(100vh-3rem)] overflow-y-auto custom-scrollbar">
               <section className="bg-surface-container border border-border-subtle rounded-xl p-5 shadow-sm">
                 {statsLoading ? (
                   <div className="shimmer space-y-3">
@@ -373,7 +396,7 @@ export default function DSAEngine() {
                   <>
                     <div className="flex justify-between items-start mb-4">
                       <div>
-                        <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Progress</p>
+                        <p className="text-xs font-bold text-primary uppercase tracking-widest mb-1">Progress</p>
                         <h3 className="text-3xl font-bold tracking-tight">
                           {stats?.total_solved ?? 0}
                           <span className="text-base font-normal text-on-surface-variant">/{stats?.total_target ?? 500}</span>
@@ -381,7 +404,7 @@ export default function DSAEngine() {
                         <p className="text-xs text-on-surface-variant mt-1">Problems Solved</p>
                       </div>
                       <div className="bg-surface-container-high px-3 py-2 rounded-xl border border-border-subtle text-center min-w-[70px]">
-                        <p className="text-[9px] uppercase font-bold text-on-surface-variant/60">Streak</p>
+                        <p className="text-xs uppercase font-bold text-on-surface-variant/60">Streak</p>
                         <p className="text-xl font-bold text-amber-400 leading-none my-0.5">{stats?.streak ?? 0}</p>
                         <p className="text-[8px] text-amber-400/80 uppercase font-bold tracking-wider">Days</p>
                       </div>
@@ -405,15 +428,15 @@ export default function DSAEngine() {
                     <div className="grid grid-cols-3 gap-2">
                       <div className="text-center bg-emerald-500/5 border border-emerald-500/10 rounded-lg py-2">
                         <p className="text-emerald-400 font-bold text-lg leading-none">{stats?.easy_solved ?? 0}</p>
-                        <p className="text-[9px] text-on-surface-variant uppercase font-bold mt-0.5">Easy</p>
+                        <p className="text-xs text-on-surface-variant uppercase font-bold mt-0.5">Easy</p>
                       </div>
                       <div className="text-center bg-amber-500/5 border border-amber-500/10 rounded-lg py-2">
                         <p className="text-amber-400 font-bold text-lg leading-none">{stats?.medium_solved ?? 0}</p>
-                        <p className="text-[9px] text-on-surface-variant uppercase font-bold mt-0.5">Medium</p>
+                        <p className="text-xs text-on-surface-variant uppercase font-bold mt-0.5">Medium</p>
                       </div>
                       <div className="text-center bg-rose-500/5 border border-rose-500/10 rounded-lg py-2">
                         <p className="text-rose-400 font-bold text-lg leading-none">{stats?.hard_solved ?? 0}</p>
-                        <p className="text-[9px] text-on-surface-variant uppercase font-bold mt-0.5">Hard</p>
+                        <p className="text-xs text-on-surface-variant uppercase font-bold mt-0.5">Hard</p>
                       </div>
                     </div>
                   </>

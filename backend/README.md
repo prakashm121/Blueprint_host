@@ -429,3 +429,8 @@ Documented honestly rather than silently glossed over:
 - **No dependency lockfile.** `requirements.txt` uses `>=` floors, so builds aren't fully reproducible. Pin with `pip-compile` or a hashed lockfile before scaling up.
 - **Row-level security must be verified in Supabase.** The frontend reads many tables directly with the public key; only 5 tables have RLS policies defined in this repo's migrations. Check the Supabase Security Advisor to confirm the rest are protected.
 - **Not yet rate-limited per user:** hub search and quiz/progress writes (covered only by the per-IP guard), and the number of simultaneous open mentor streams.
+
+
+### Recent Updates
+- **Automated Quiz Generation**: Added `/api/v1/internal/quiz-restock` which synchronously calls Gemini to generate missing quiz scopes (`bulk_restock_questions`). This is triggered by a GitHub Action cron job to avoid the need for a 24/7 Celery worker on the free tier.
+- **Vault Deduplication & Caching**: Added deduplication guard to the POST vault endpoint to prevent duplicate saves. Fixed an Enum stringification bug that prevented the Redis cache from properly invalidating when items were deleted.

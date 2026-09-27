@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 
 from app.db.session import get_db
-from app.models.vault import VaultItem
+from app.models.vault import VaultItem, VaultItemType, VaultReferenceType
 from app.models.user import User
 from app.api.deps import get_current_user
 from app.core.cache import get_cache, set_cache, delete_cache
@@ -47,10 +47,36 @@ def get_vault_items(
         "next_cursor": next_cursor
     }
     
-    set_cache(cache_key, response_data, 300) # 5 mins TTL
+    set_cache(cache_key, response_data, 300)  # 5 mins TTL
     return response_data
 
-from app.models.vault import VaultItem, VaultItemType, VaultReferenceType
+
+@router.get("/saved-ids")
+def get_saved_ids_by_type(
+    reference_type: str = Query(..., description="e.g. DSA, INTERVIEW, QUIZ, NONE"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """One-shot bulk query: returns a map of { reference_id -> vault_id }
+    for all BOOKMARK items of a given reference_type for the current user.
+    One call per page load replaces per-card /check calls.
+    """
+    cache_key = f"vault:{current_user.id}:saved_ids:{reference_type}"
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    rows = db.query(VaultItem.reference_id, VaultItem.id).filter(
+        VaultItem.user_id == current_user.id,
+        VaultItem.reference_type == reference_type,
+        VaultItem.item_type == VaultItemType.BOOKMARK,
+        VaultItem.reference_id.isnot(None),
+    ).all()
+
+    result = {str(row.reference_id): row.id for row in rows}
+    set_cache(cache_key, result, 120)  # 2 min TTL
+    return result
+
 
 class VaultItemCreate(BaseModel):
     item_type: VaultItemType
@@ -59,12 +85,24 @@ class VaultItemCreate(BaseModel):
     title: str
     content: Optional[str] = None
 
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_vault_item(
     item_in: VaultItemCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Dedup guard: if a BOOKMARK for the same reference already exists, return it.
+    if item_in.reference_id is not None and item_in.item_type == VaultItemType.BOOKMARK:
+        existing = db.query(VaultItem).filter(
+            VaultItem.user_id == current_user.id,
+            VaultItem.item_type == item_in.item_type,
+            VaultItem.reference_type == item_in.reference_type,
+            VaultItem.reference_id == item_in.reference_id,
+        ).first()
+        if existing:
+            return {"id": existing.id, "message": "Already saved"}
+
     new_item = VaultItem(
         user_id=current_user.id,
         item_type=item_in.item_type,
@@ -77,9 +115,14 @@ def create_vault_item(
     db.commit()
     db.refresh(new_item)
     
+    # Invalidate both caches
     delete_cache(f"vault:{current_user.id}:list:0:20")
+    if item_in.reference_type:
+        ref_val = item_in.reference_type.value if hasattr(item_in.reference_type, 'value') else item_in.reference_type
+        delete_cache(f"vault:{current_user.id}:saved_ids:{ref_val}")
     
     return {"id": new_item.id, "message": "Item saved to vault"}
+
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_vault_item(
@@ -90,8 +133,13 @@ def delete_vault_item(
     item = db.query(VaultItem).filter(VaultItem.id == id, VaultItem.user_id == current_user.id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-        
+    
+    ref_type = item.reference_type
     db.delete(item)
     db.commit()
     
+    # Invalidate both caches
     delete_cache(f"vault:{current_user.id}:list:0:20")
+    if ref_type:
+        ref_val = ref_type.value if hasattr(ref_type, 'value') else ref_type
+        delete_cache(f"vault:{current_user.id}:saved_ids:{ref_val}")

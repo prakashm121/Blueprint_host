@@ -12,6 +12,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.cache import delete_cache, get_cache, set_cache
 from app.db.session import get_db
+from fastapi.responses import StreamingResponse
+from app.services.quiz_generator import (
+    get_inventory_summary, stream_generate_questions, resolve_career_to_quiz_scope,
+    QUIZ_TAXONOMY, VALID_DIFFICULTIES, UnsupportedCareerScope
+)
+
 from app.models.hub import DSAProblem, InterviewQuestion, QuizQuestion
 from app.models.hub_progress import UserCodingProgress, UserQuizSession, UserQuizQuestionAttempt
 import random
@@ -24,16 +30,30 @@ router = APIRouter()
 # DSA / Coding Problems
 # ─────────────────────────────────────────────────────────────────────────────
 
+
+
+from pydantic import BaseModel
+from typing import Optional
+
+class QuizGenerateRequest(BaseModel):
+    section: Optional[str] = None
+    topic: Optional[str] = None
+    difficulty: str
+    role: Optional[str] = None
+    category: Optional[str] = None
+    skill: Optional[str] = None
+
 @router.get("/coding")
 def list_coding_problems(
-    last_id:    int            = Query(0,  description="Keyset cursor — pass next_cursor from previous page"),
+    page:       int            = Query(0,  description="Page number (0-indexed)"),
     limit:      int            = Query(20, le=20),
     difficulty: Optional[str] = None,
     topic:      Optional[str] = None,
     company:    Optional[str] = None,
+    sort:       Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    filters_str = f"{last_id}:{limit}:{difficulty}:{topic}:{company}"
+    filters_str = f"{page}:{limit}:{difficulty}:{topic}:{company}:{sort}"
     cache_key   = f"coding:list:{hashlib.md5(filters_str.encode()).hexdigest()}"
 
     cached = get_cache(cache_key)
@@ -48,17 +68,21 @@ def list_coding_problems(
         DSAProblem.companies,
         DSAProblem.topic_tags,
         DSAProblem.acRate,
-    ).filter(DSAProblem.id > last_id)
+    )
 
     if difficulty and difficulty != "All":
         query = query.filter(DSAProblem.difficulty == difficulty)
     if topic and topic != "All":
-        # JSONB array containment: topic_tags @> '["Arrays"]'
         query = query.filter(DSAProblem.topic_tags.contains([topic]))
     if company and company != "All":
         query = query.filter(DSAProblem.companies.contains([company]))
 
-    results = query.order_by(DSAProblem.id.asc()).limit(limit).all()
+    if sort == "Popular":
+        query = query.order_by(DSAProblem.acRate.desc().nulls_last())
+    else:
+        query = query.order_by(DSAProblem.id.asc())
+
+    results = query.offset(page * limit).limit(limit).all()
 
     items = [
         {
@@ -75,7 +99,7 @@ def list_coding_problems(
 
     response_data = {
         "items":       items,
-        "next_cursor": items[-1]["id"] if items else None,
+        "next_cursor": page + 1 if len(items) == limit else None,
     }
     set_cache(cache_key, response_data, 7200)   # 2 h
     return response_data
@@ -114,16 +138,16 @@ def get_coding_problem(problem_id: int, db: Session = Depends(get_db)):
 
 @router.get("/interview")
 def list_interview_questions(
-    last_id:    int            = Query(0,  description="Keyset cursor"),
+    page:       int            = Query(0,  description="Page number (0-indexed)"),
     limit:      int            = Query(20, le=20),
     category:   Optional[str] = None,
-    skill:      Optional[str] = None,   # ← NEW: e.g. Python, React, OOP
+    skill:      Optional[str] = None,
     difficulty: Optional[str] = None,
     role:       Optional[str] = None,
+    sort:       Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    # skill included in cache key to avoid collisions
-    filters_str = f"{last_id}:{limit}:{category}:{skill}:{difficulty}:{role}"
+    filters_str = f"{page}:{limit}:{category}:{skill}:{difficulty}:{role}:{sort}"
     cache_key   = f"iq:list:{hashlib.md5(filters_str.encode()).hexdigest()}"
 
     cached = get_cache(cache_key)
@@ -133,31 +157,31 @@ def list_interview_questions(
     query = db.query(
         InterviewQuestion.id,
         InterviewQuestion.title,
+        InterviewQuestion.body,
         InterviewQuestion.category,
-        InterviewQuestion.skill,        # ← returned on list so frontend can group/label
+        InterviewQuestion.skill,
         InterviewQuestion.difficulty,
         InterviewQuestion.roles,
-    ).filter(
-        InterviewQuestion.id > last_id,
     )
 
     if category and category != "All":
         query = query.filter(InterviewQuestion.category == category)
     if skill and skill != "All":
-        # Case-insensitive match — skill values are title-cased in DB (Python, React.js)
         query = query.filter(InterviewQuestion.skill.ilike(skill))
     if difficulty and difficulty != "All":
         query = query.filter(InterviewQuestion.difficulty == difficulty)
     if role:
-        # ARRAY containment: 'Backend Engineer' = ANY(roles)
         query = query.filter(InterviewQuestion.roles.any(role))
 
-    results = query.order_by(InterviewQuestion.id.asc()).limit(limit).all()
+    query = query.order_by(InterviewQuestion.id.asc())
+
+    results = query.offset(page * limit).limit(limit).all()
 
     items = [
         {
             "id":         r.id,
             "title":      r.title,
+            "body":       r.body,
             "category":   r.category,
             "skill":      r.skill,
             "difficulty": r.difficulty,
@@ -168,7 +192,7 @@ def list_interview_questions(
 
     response_data = {
         "items":       items,
-        "next_cursor": items[-1]["id"] if items else None,
+        "next_cursor": page + 1 if len(items) == limit else None,
     }
     set_cache(cache_key, response_data, 3600)   # 1 h
     return response_data
@@ -594,3 +618,49 @@ def update_coding_progress(
 
     delete_cache(f"dsa:stats:{current_user.id}")
     return {"success": True, "status": body.status}
+
+
+@router.get("/quiz/inventory")
+def get_quiz_inventory(db: Session = Depends(get_db)):
+    summary = get_inventory_summary(db)
+    low_scopes = [s for s in summary if s["low"]]
+    total_questions = sum(s["count"] for s in summary)
+    by_section = {}
+    for s in summary:
+        by_section.setdefault(s["section"], []).append(s)
+    return {
+        "total_questions": total_questions,
+        "low_inventory_count": len(low_scopes),
+        "by_section": by_section,
+        "low_scopes": low_scopes,
+    }
+
+@router.post("/quiz/generate/stream")
+async def generate_quiz_stream(
+    body: QuizGenerateRequest,
+    db: Session = Depends(get_db),
+):
+    # 1. Resolve exact scope
+    section, topic = body.section, body.topic
+    if not section or not topic:
+        try:
+            resolved = resolve_career_to_quiz_scope(body.category, body.skill)
+            section = resolved["section"]
+            topic = resolved["topic"]
+        except UnsupportedCareerScope as e:
+            raise HTTPException(400, str(e))
+
+    if section not in QUIZ_TAXONOMY:
+        raise HTTPException(400, f"Unknown section: {section}")
+    if topic not in QUIZ_TAXONOMY.get(section, []):
+        raise HTTPException(400, f"Topic {topic} not valid for {section}")
+    if body.difficulty not in VALID_DIFFICULTIES:
+        raise HTTPException(400, f"Invalid difficulty: {body.difficulty}")
+
+    return StreamingResponse(
+        stream_generate_questions(
+            db=db, section=section, topic=topic, difficulty=body.difficulty,
+            role=body.role, category=body.category, skill=body.skill
+        ),
+        media_type="text/event-stream"
+    )
