@@ -259,15 +259,17 @@ async def generate_roadmap(
 
     # Collect weak areas (confidence < 50) â€” filter by role for accuracy
     key_to_label = get_key_to_label(target_role)
-    weak_rows = (
-        db.query(UserSkillAssessment)
+    from app.models.assessment import Skill
+    weak_skills = (
+        db.query(Skill.skill_key)
+        .join(UserSkillAssessment, UserSkillAssessment.skill_id == Skill.id)
         .filter(
             UserSkillAssessment.user_id == current_user.id,
             UserSkillAssessment.self_rated_confidence < 50,
         )
         .all()
     )
-    weak_areas = [key_to_label.get(r.skill_key, r.skill_key.replace("_", " ").title()) for r in weak_rows]
+    weak_areas = [key_to_label.get(r[0], r[0].replace("_", " ").title()) for r in weak_skills]
 
     preparation_status = getattr(current_user, "preparation_status", "early") or "early"
 
@@ -304,46 +306,53 @@ async def generate_roadmap(
 
     # Seed all role-specific skills, carrying over confidence from onboarding universal rows.
     # This bridges the onboarding assessment (role=NULL) with the dashboard subjects page (role=target_role).
-    universal_rows = (
-        db.query(UserSkillAssessment)
+    universal_skills = (
+        db.query(Skill.skill_key, UserSkillAssessment.self_rated_confidence)
+        .join(UserSkillAssessment, UserSkillAssessment.skill_id == Skill.id)
         .filter(
             UserSkillAssessment.user_id == current_user.id,
-            UserSkillAssessment.role == None,  # noqa: E711
+            UserSkillAssessment.role == None,
         )
         .all()
     )
-    universal_confidence: dict[str, int] = {r.skill_key: int(r.self_rated_confidence) for r in universal_rows}
+    universal_confidence: dict[str, int] = {r[0]: int(r[1]) for r in universal_skills}
 
     for category_name, skills in ROLE_ASSESSMENT_SKILLS.get(target_role, {}).items():
         for s in skills:
             skill_type = "subject" if category_name == "Core Subjects" else ("dsa" if category_name == "DSA" else "role_specific")
+            
+            # Ensure Skill exists
+            skill_obj = db.query(Skill).filter(Skill.skill_key == s["key"]).first()
+            if not skill_obj:
+                skill_obj = Skill(
+                    skill_key=s["key"],
+                    skill_type=skill_type,
+                    category=category_name
+                )
+                db.add(skill_obj)
+                db.flush()
+                
             existing = (
                 db.query(UserSkillAssessment)
                 .filter(
                     UserSkillAssessment.user_id == current_user.id,
                     UserSkillAssessment.role == target_role,
-                    UserSkillAssessment.skill_key == s["key"],
+                    UserSkillAssessment.skill_id == skill_obj.id,
                 )
                 .first()
             )
             if existing:
-                # Already rated on the Subjects page â€” keep as-is
-                # But if it's still at 25 (never touched) and onboarding has a higher value, carry it over
+                # Already rated on the Subjects page — keep as-is
                 if existing.self_rated_confidence == 25 and s["key"] in universal_confidence:
                     existing.self_rated_confidence = universal_confidence[s["key"]]
             else:
-                # Not yet in DB â€” seed from onboarding row if available, else default 25
                 seeded_confidence = universal_confidence.get(s["key"], 25)
                 db.add(UserSkillAssessment(
                     user_id=current_user.id,
-                    skill_key=s["key"],
-                    skill_type=skill_type,
-                    category=category_name,
+                    skill_id=skill_obj.id,
                     role=target_role,
                     self_rated_confidence=seeded_confidence,
                 ))
-
-    # Welcome notification
     notify_welcome(db, current_user)
 
     db.commit()

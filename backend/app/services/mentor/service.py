@@ -212,7 +212,7 @@ Important classification rules:
 3. If the user gives broken code and asks what is wrong, use debugging.
 4. Use theory only when implementation is genuinely not the main purpose.
 
-Return ONLY the selected mode.
+Respond ONLY with a valid JSON object matching the requested schema. DO NOT add markdown formatting or conversational text.
 
 User Message:
 {message}
@@ -268,7 +268,7 @@ async def generate_teacher_response_stream(
         role = turn["role"].capitalize()
         prompt += f"\n{role}: {turn['content']}"
 
-    prompt += f"\n\nUser:\n{message}\n\nResponse length must adapt to the question."
+    prompt += f"\n\nUser:\n{message}\n\nAnswer directly and concisely. For normal questions, stay around 150-300 words. Use more detail only when the question genuinely requires it."
 
     async for chunk in ai_gateway.generate_stream(task="teacher_response", prompt=prompt, model_override=model_override):
         yield chunk
@@ -286,7 +286,7 @@ async def generate_mentor_response_stream(
         role = turn["role"].capitalize()
         prompt += f"\n{role}: {turn['content']}"
 
-    prompt += f"\n\nUser:\n{message}\n\nResponse length must adapt to the question."
+    prompt += f"\n\nUser:\n{message}\n\nAnswer directly and concisely. For normal questions, stay around 150-300 words. Use more detail only when the question genuinely requires it."
 
     async for chunk in ai_gateway.generate_stream(task="mentor_response", prompt=prompt, model_override=model_override):
         yield chunk

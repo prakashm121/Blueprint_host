@@ -55,22 +55,25 @@ export default function QuizEngine() {
   };
 
   // ── Fetch questions ──────────────────────────────────────────────────────
-  const startQuizSession = () => {
+  const [isPoolExhausted, setIsPoolExhausted] = useState(false);
+  const [remainingCount, setRemainingCount] = useState(null);
+
+  const startQuizSession = (replay = false) => {
     setLoading(true);
     setError(null);
     setAttemptResult(null);
     setSubmitError(null);
+    setIsPoolExhausted(false);
 
-    api.get('/api/v1/hub/quiz', {
-      params: {
-        limit: 15,
-        ...(section && { section }),
-        ...(topic && { topic }),
-        ...(difficulty && { difficulty }),
-      },
+    api.post('/api/v1/hub/quiz/session', {
+      limit: 15,
+      section: section || "All",
+      topic: topic || "All",
+      difficulty: difficulty || "All",
+      replay: replay
     })
       .then(res => {
-        const fetchedItems = res.data?.items || res.data || [];
+        const fetchedItems = res.data?.questions || [];
         if (fetchedItems.length === 0) {
           setError('No evaluation nodes matching your configured vectors were located.');
         } else {
@@ -81,6 +84,8 @@ export default function QuizEngine() {
           setTimeLeft(fetchedItems.length * 60);
           setQuizStarted(true);
           setQuizCompleted(false);
+          setIsPoolExhausted(res.data.completed);
+          setRemainingCount(res.data.remaining_questions);
         }
       })
       .catch(() => setError('Failed to seed evaluation nodes. Please sync connection and retry.'))
@@ -252,11 +257,18 @@ export default function QuizEngine() {
                     </div>
                   </div>
 
-                  <button onClick={startQuizSession}
-                    className="w-full py-3 bg-primary text-on-primary text-xs font-bold rounded-xl hover:brightness-110 shadow-sm transition-all flex items-center justify-center gap-2">
-                    <span className="material-symbols-outlined text-base">rocket_launch</span>
-                    Initialize Evaluation Session
-                  </button>
+                  <div className="flex gap-3">
+                    <button onClick={() => startQuizSession(false)}
+                      className="flex-1 py-3 bg-primary text-on-primary text-xs font-bold rounded-xl hover:brightness-110 shadow-sm transition-all flex items-center justify-center gap-2">
+                      <span className="material-symbols-outlined text-base">rocket_launch</span>
+                      Initialize Evaluation Session
+                    </button>
+                    <button onClick={() => startQuizSession(true)}
+                      className="flex-1 py-3 bg-surface-container-high border border-border-subtle text-on-surface text-xs font-bold rounded-xl hover:bg-surface-container-highest shadow-sm transition-all flex items-center justify-center gap-2">
+                      <span className="material-symbols-outlined text-base">replay</span>
+                      Practice Again (Include Attempted)
+                    </button>
+                  </div>
                 </div>
 
               ) : !quizCompleted ? (
@@ -282,15 +294,10 @@ export default function QuizEngine() {
                   </h3>
 
                   <div key={`o-${currentIdx}`} className="stagger-list grid grid-cols-1 gap-2.5">
-                    {[
-                      { key: 'A', text: questions[currentIdx]?.option_a },
-                      { key: 'B', text: questions[currentIdx]?.option_b },
-                      { key: 'C', text: questions[currentIdx]?.option_c },
-                      { key: 'D', text: questions[currentIdx]?.option_d },
-                    ].map((opt) => {
-                      const isSelected = selectedAnswers[currentIdx] === opt.key;
+                    {questions[currentIdx]?.options?.map((opt) => {
+                      const isSelected = selectedAnswers[currentIdx] === opt.option_id;
                       return (
-                        <button key={opt.key} onClick={() => handleOptionSelect(opt.key)}
+                        <button key={opt.option_id} onClick={() => handleOptionSelect(opt.option_id)}
                           className={`w-full text-left p-3.5 rounded-xl border text-xs flex items-center gap-3.5 transition-all group ${isSelected
                               ? 'bg-primary/10 border-primary text-on-surface'
                               : 'bg-surface-container-low border-border-subtle hover:border-primary/40 text-on-surface-variant hover:text-on-surface'
@@ -298,7 +305,7 @@ export default function QuizEngine() {
                         >
                           <div key={isSelected ? 'on' : 'off'} className={`w-5 h-5 rounded-md font-bold flex items-center justify-center transition-colors shrink-0 text-[10px] ${isSelected ? 'pop bg-primary text-on-primary' : 'bg-surface-container-high border border-border-subtle'
                             }`}>
-                            {opt.key}
+                            {opt.display_id}
                           </div>
                           <span className="leading-relaxed flex-1">{opt.text}</span>
                         </button>
@@ -392,10 +399,22 @@ export default function QuizEngine() {
                       </div>
                     </div>
 
-                    <button onClick={() => { setQuizStarted(false); setQuizCompleted(false); setAttemptResult(null); }}
-                      className="px-5 py-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-on-primary text-xs font-bold rounded-xl transition-all shadow-sm">
-                      Configure Another Track
-                    </button>
+                    {isPoolExhausted && (
+                      <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl">
+                        🎉 You've completed all unseen questions in this topic! You can practice again to include historical attempts.
+                      </div>
+                    )}
+                    
+                    <div className="flex justify-center gap-3">
+                      <button onClick={() => { setQuizStarted(false); setQuizCompleted(false); setAttemptResult(null); }}
+                        className="px-5 py-2 bg-surface-container-high text-on-surface border border-border-subtle hover:bg-surface-container-highest text-xs font-bold rounded-xl transition-all shadow-sm">
+                        Back to Setup
+                      </button>
+                      <button onClick={() => startQuizSession(true)}
+                        className="px-5 py-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-on-primary text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[14px]">replay</span> Practice Again
+                      </button>
+                    </div>
                   </div>
 
                   {/* Per-question review */}
@@ -415,8 +434,9 @@ export default function QuizEngine() {
 
                       {/* Options with correct/wrong highlighting */}
                       <div className="grid grid-cols-1 gap-2">
-                        {['A', 'B', 'C', 'D'].map(key => {
-                          const text = reviewQuestion?.[`option_${key.toLowerCase()}`];
+                        {questions[reviewIdx]?.options?.map(opt => {
+                          const key = opt.option_id;
+                          const text = opt.text;
                           const isCorrect = reviewQuestion?.correct_ans === key;
                           const isSelected = reviewQuestion?.selected_option === key;
                           const isWrong = isSelected && !isCorrect;
@@ -434,7 +454,7 @@ export default function QuizEngine() {
                                   : isWrong ? 'bg-rose-500 text-white'
                                     : 'bg-surface-container-high border border-border-subtle'
                                 }`}>
-                                {key}
+                                {opt.display_id}
                               </div>
                               <span className="flex-1">{text}</span>
                               {isCorrect && (

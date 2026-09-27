@@ -15,6 +15,41 @@ const DIFFICULTY_COLORS = {
 };
 
 function ProblemCard({ problem, onOpen, companyFilter }) {
+  const [bookmarked, setBookmarked] = useState(false);
+  const [vaultId, setVaultId] = useState(null);
+
+  const handleBookmark = async (e) => {
+    e.stopPropagation();
+    try {
+      if (bookmarked && vaultId) {
+        setBookmarked(false);
+        const oldVaultId = vaultId;
+        setVaultId(null);
+        try {
+          await api.delete(`/api/v1/vault/${oldVaultId}`);
+        } catch {
+          setBookmarked(true);
+          setVaultId(oldVaultId);
+        }
+      } else {
+        setBookmarked(true);
+        const topics = Array.isArray(problem.topic_tags) ? problem.topic_tags : [];
+        try {
+          const res = await api.post('/api/v1/vault/', {
+            item_type: 'BOOKMARK',
+            reference_type: 'DSA',
+            reference_id: problem.id,
+            title: problem.title,
+            content: `Difficulty: ${problem.difficulty} | Topics: ${topics.join(', ')}`,
+          });
+          setVaultId(res.data.id);
+        } catch {
+          setBookmarked(false);
+        }
+      }
+    } catch { /* silent */ }
+  };
+
   const colors = DIFFICULTY_COLORS[problem.difficulty] || DIFFICULTY_COLORS.EASY;
   
   // 1. Safely parse companies (Handles both Arrays and Strings)
@@ -94,14 +129,12 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
 
       <div className="flex items-center gap-3 justify-end shrink-0 pt-2 sm:pt-0 border-t border-border-subtle/40 sm:border-t-0">
         <button
-          data-tip="Bookmark"
-          aria-label="Bookmark"
-          className="p-2 text-on-surface-variant hover:text-primary transition-colors rounded-lg hover:bg-surface-container"
-          onClick={e => {
-            e.stopPropagation(); 
-          }}
+          data-tip={bookmarked ? 'Remove bookmark' : 'Bookmark'}
+          aria-label={bookmarked ? 'Remove bookmark' : 'Bookmark'}
+          onClick={handleBookmark}
+          className={`p-2 transition-colors rounded-lg ${bookmarked ? 'text-primary bg-primary/10' : 'text-on-surface-variant hover:text-primary hover:bg-surface-container'}`}
         >
-          <span className="material-symbols-outlined text-xl">bookmark</span>
+          <span className="material-symbols-outlined text-xl" style={{ fontVariationSettings: `'FILL' ${bookmarked ? 1 : 0}` }}>bookmark</span>
         </button>
         <button 
           className="px-4 py-2 bg-primary/10 text-primary border border-primary/20 text-xs font-bold rounded-lg hover:bg-primary hover:text-on-primary transition-all"

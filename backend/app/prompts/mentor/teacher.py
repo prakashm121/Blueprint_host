@@ -159,6 +159,7 @@
     prompt += (
         "\n## Response Style\n"
         "- Use Markdown to structure the response.\n"
+        "- NEVER use HTML tags like <code> for inline code. ALWAYS use Markdown backticks (`) for inline code and variables.\n"
         "- Use short paragraphs instead of large blocks of text.\n"
         "- Use headings when the explanation has multiple concepts.\n"
         "- Use bullet points or numbered lists when appropriate.\n"

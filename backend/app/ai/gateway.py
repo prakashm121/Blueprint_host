@@ -1,94 +1,302 @@
-﻿import asyncio
+import asyncio
 import time
-from typing import Optional, Type, TypeVar
+from enum import Enum
+from typing import Any, Optional
+
 from google import genai
-from google.genai import errors
-from pydantic import BaseModel
+from google.genai import errors, types
 
 from app.core.config import settings
-from app.ai.errors import (
-    AIError,
-    AIUnavailableError,
-    AIRateLimitError,
-    AITimeoutError,
-    AIValidationError,
-    AIProviderError
-)
+from app.services.resume.schemas import ResumeFeedback
 
-T = TypeVar("T", bound=BaseModel)
+
+class AIError(Exception):
+    pass
+
+
+class AIProviderError(AIError):
+    pass
+
+
+class AIRateLimitError(AIProviderError):
+    pass
+
+
+class AITimeoutError(AIError):
+    pass
+
+
+class AIValidationError(AIError):
+    pass
+
+
+class AIUnavailableError(AIError):
+    pass
+
+
+class CircuitState(Enum):
+    CLOSED = "CLOSED"
+    OPEN = "OPEN"
+    HALF_OPEN = "HALF_OPEN"
+
+
+class ModelHealth:
+    def __init__(self):
+        self.state: CircuitState = CircuitState.CLOSED
+        self.failure_count: int = 0
+        self.opened_at: float = 0.0
+        self.cooldown_until: float = 0.0
+        self.last_success: float = 0.0
+        self.last_failure: float = 0.0
+
+
+class HealthTracker:
+    def __init__(self):
+        self._health: dict[str, ModelHealth] = {}
+        self._lock = asyncio.Lock()
+
+        self.COOLDOWNS = {
+            "503": 60.0,
+            "429": 60.0,
+            "TIMEOUT": 60.0,
+            "CONNECTION": 60.0,
+            "404": 300.0,  # 5 min cooldown, but fully recoverable
+            "DEFAULT": 60.0,
+        }
+
+    def _get_health(self, model: str) -> ModelHealth:
+        if model not in self._health:
+            self._health[model] = ModelHealth()
+
+        return self._health[model]
+
+    async def is_available(self, model: str) -> bool:
+        async with self._lock:
+            h = self._get_health(model)
+
+            if h.state == CircuitState.CLOSED:
+                return True
+
+            if h.state == CircuitState.OPEN:
+                if time.monotonic() >= h.cooldown_until:
+                    h.state = CircuitState.HALF_OPEN
+
+                    print(
+                        f"[CircuitBreaker] {model} cooldown expired. "
+                        "State -> HALF_OPEN (Probing)"
+                    )
+
+                    return True
+
+                return False
+
+            if h.state == CircuitState.HALF_OPEN:
+                # Another request is already probing.
+                return False
+
+            return False
+
+    async def record_success(self, model: str):
+        async with self._lock:
+            h = self._get_health(model)
+
+            h.last_success = time.time()
+
+            if h.state != CircuitState.CLOSED:
+                h.state = CircuitState.CLOSED
+                h.failure_count = 0
+
+                print(
+                    f"[CircuitBreaker] {model} probe SUCCEEDED. "
+                    "State -> CLOSED"
+                )
+
+    async def record_failure(self, model: str, error_type: str):
+        async with self._lock:
+            h = self._get_health(model)
+
+            h.last_failure = time.time()
+            h.failure_count += 1
+
+            cooldown_s = self.COOLDOWNS.get(
+                error_type,
+                self.COOLDOWNS["DEFAULT"],
+            )
+
+            h.state = CircuitState.OPEN
+            h.opened_at = time.monotonic()
+            h.cooldown_until = h.opened_at + cooldown_s
+
+            print(
+                f"[CircuitBreaker] {model} FAILED ({error_type}). "
+                f"State -> OPEN for {cooldown_s}s"
+            )
+
 
 class AIGateway:
     def __init__(self):
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self.semaphore = asyncio.Semaphore(settings.GEMINI_CONCURRENCY)
-        
-    def _get_model_chain(self, task: str) -> list[str]:
-        if task in ("mentor_response", "teacher_response"):
-            return getattr(settings, "GEMINI_MENTOR_MODELS", ["gemini-3.5-flash"])
-        elif task == "resume_analysis":
-            return getattr(settings, "GEMINI_RESUME_MODELS", ["gemini-3.5-flash"])
-        elif task in ("roadmap_generation", "weekly_planner", "daily_breakdown"):
-            return getattr(settings, "GEMINI_ROADMAP_MODELS", ["gemini-3.5-flash"])
-        return getattr(settings, "GEMINI_LIGHT_MODELS", ["gemini-3.5-flash-lite"])
+        self.client = genai.Client(
+            api_key=settings.GEMINI_API_KEY
+        )
 
-    def _resolve_models(self, task: str, model_override: Optional[str] = None) -> list[str]:
-        """The task's fallback chain; a requested model is tried first but never replaces the chain."""
-        chain = list(self._get_model_chain(task))
+        self.semaphore = asyncio.Semaphore(
+            settings.GEMINI_CONCURRENCY
+        )
+
+        self.health = HealthTracker()
+
+    def _resolve_models(
+        self,
+        task: str,
+        model_override: str = None,
+    ) -> list[str]:
         if model_override:
-            return [model_override] + [m for m in chain if m != model_override]
-        return chain
+            return [model_override]
+
+        if task == "resume_analysis":
+            return settings.GEMINI_RESUME_MODELS
+
+        elif task == "roadmap_generation":
+            return settings.GEMINI_ROADMAP_MODELS
+
+        elif task in (
+            "mentor_response",
+            "teaching_intent",
+            "teacher_response",
+            "dsa",
+            "interview_qa",
+        ):
+            # Combine both lists so it tries premium models first, then falls back to lite
+            base_models = settings.GEMINI_MENTOR_MODELS
+            light_models = getattr(settings, "GEMINI_LIGHT_MODELS", [])
+            
+            # Deduplicate while preserving order
+            combined = []
+            for m in (base_models + light_models):
+                if m not in combined:
+                    combined.append(m)
+                    
+            return combined
+
+        return [settings.GEMINI_MODEL]
+
+    def _classify_error(
+        self,
+        e: Exception,
+    ) -> Optional[str]:
+        # Try structured status codes first.
+        status_code = getattr(
+            e,
+            "code",
+            getattr(e, "status", None),
+        )
+
+        if status_code == 404:
+            return "404"
+
+        if status_code == 429:
+            return "429"
+
+        if status_code == 503:
+            return "503"
+
+        # Fall back to string parsing if the SDK
+        # doesn't expose a clean property.
+        err_str = str(e).lower()
+
+        if "404" in err_str or "not_found" in err_str:
+            return "404"
+
+        if (
+            "429" in err_str
+            or "quota" in err_str
+            or "exhausted" in err_str
+        ):
+            return "429"
+
+        if "503" in err_str or "unavailable" in err_str:
+            return "503"
+
+        if "timeout" in err_str:
+            return "TIMEOUT"
+
+        if "connection" in err_str:
+            return "CONNECTION"
+
+        return None
 
     async def generate(
         self,
         task: str,
         prompt: str,
-        schema: Optional[Type[T]] = None,
-        timeout: Optional[float] = None,
-        model_override: Optional[str] = None,
-        return_model: bool = False
-    ) -> str | T | tuple[str | T, str]:
-        if task in ("mentor_response", "teacher_response"):
-            default_timeout = 60.0
-            max_tokens = 6000
-            max_attempts = 2
-        elif task in ("resume_analysis", "roadmap_generation", "weekly_planner", "daily_breakdown"):
-            default_timeout = 120.0
+        schema: Any = None,
+        timeout: float = None,
+        model_override: str = None,
+        return_model: bool = False,
+    ) -> Any:
+        if task == "resume_analysis":
+            default_timeout = 180.0
             max_tokens = 8192
-            max_attempts = 2
+            max_attempts = 3
+
         elif task == "teaching_intent":
-            default_timeout = 5.0
-            max_tokens = 64
+            default_timeout = 30.0
+            max_tokens = settings.GEMINI_MAX_TOKENS
             max_attempts = 1
+
         else:
             default_timeout = settings.GEMINI_REQUEST_TIMEOUT
             max_tokens = settings.GEMINI_MAX_TOKENS
             max_attempts = 2
-            
+
         timeout_s = timeout or default_timeout
-        
-        models = self._resolve_models(task, model_override)
-            
+        request_deadline = time.monotonic() + timeout_s
+
+        models = self._resolve_models(
+            task,
+            model_override,
+        )
+
         config_kwargs = {
             "temperature": settings.GEMINI_TEMPERATURE,
             "top_p": settings.GEMINI_TOP_P,
             "top_k": settings.GEMINI_TOP_K,
             "max_output_tokens": max_tokens,
         }
+
         if schema:
             config_kwargs["response_mime_type"] = "application/json"
             config_kwargs["response_schema"] = schema
 
-        config = genai.types.GenerateContentConfig(**config_kwargs)
+        config = genai.types.GenerateContentConfig(
+            **config_kwargs
+        )
 
         last_error: Optional[Exception] = None
+        start_time_total = time.time()
 
-        async with self.semaphore:
-            start_time = time.time()
-            for current_model in models:
-                for attempt in range(max_attempts):
-                    try:
-                        print(f"[AI Gateway] task={task} model={current_model} attempt={attempt+1}")
-                        
+        for current_model in models:
+            for attempt in range(max_attempts):
+                if time.monotonic() > request_deadline:
+                    raise AITimeoutError(
+                        f"Request budget of {timeout_s}s exceeded."
+                    )
+
+                if not await self.health.is_available(current_model):
+                    print(
+                        f"[AI Gateway] {current_model} "
+                        "SKIPPED (unhealthy)"
+                    )
+                    break
+
+                try:
+                    print(
+                        f"[AI Gateway] task={task} "
+                        f"model={current_model} "
+                        f"attempt={attempt + 1}"
+                    )
+
+                    async with self.semaphore:
                         response = await asyncio.wait_for(
                             asyncio.to_thread(
                                 self.client.models.generate_content,
@@ -99,69 +307,151 @@ class AIGateway:
                             timeout=timeout_s,
                         )
 
-                        if not response.text:
-                            raise AIProviderError(f"Model {current_model} returned an empty response.")
-                            
-                        text_output = response.text.strip()
-                        latency = time.time() - start_time
-                        
-                        if schema:
-                            try:
-                                validated_obj = schema.model_validate_json(text_output)
-                                print(f"[AI Gateway] SUCCESS task={task} model={current_model} latency={latency:.2f}s validated=true")
-                                return (validated_obj, current_model) if return_model else validated_obj
-                            except Exception as ve:
-                                print(f"[AI Gateway] VALIDATION ERROR on {current_model}: {ve}")
-                                last_error = AIValidationError(
-                                    f"Model {current_model} returned JSON that failed validation against "
-                                    f"{schema.__name__}: {ve}"
-                                )
-                                if attempt < max_attempts - 1:
-                                    await asyncio.sleep(1.0)
-                                    continue
-                                break
+                    if not response.text:
+                        raise AIProviderError(
+                            f"Model {current_model} "
+                            "returned an empty response."
+                        )
 
-                        print(f"[AI Gateway] SUCCESS task={task} model={current_model} latency={latency:.2f}s validated=false")
-                        return (text_output, current_model) if return_model else text_output
+                    text_output = response.text.strip()
+                    latency = time.time() - start_time_total
 
-                    except errors.APIError as e:
-                        error_msg = str(e).lower()
-                        print(f"[AI Gateway] API error on {current_model}, attempt={attempt+1}: {e}")
-                        last_error = AIProviderError(f"{current_model} returned an API error: {e}")
+                    if schema:
+                        try:
+                            if text_output.startswith("```"):
+                                text_output = "\n".join(text_output.split("\n")[1:-1]).strip()
+                            if "{" in text_output and "}" in text_output:
+                                text_output = text_output[text_output.find("{"):text_output.rfind("}")+1]
+                                
+                            validated_obj = schema.model_validate_json(
+                                text_output
+                            )
 
-                        if "404" in error_msg or "not_found" in error_msg:
-                            print(f"[AI Gateway] MODEL NOT FOUND (404) on {current_model}. Skipping completely.")
+                            print(
+                                f"[AI Gateway] SUCCESS "
+                                f"task={task} "
+                                f"model={current_model} "
+                                f"latency={latency:.2f}s "
+                                "validated=true"
+                            )
+
+                            await self.health.record_success(
+                                current_model
+                            )
+
+                            return (
+                                (validated_obj, current_model)
+                                if return_model
+                                else validated_obj
+                            )
+
+                        except Exception as ve:
+                            print(
+                                f"[AI Gateway] VALIDATION ERROR "
+                                f"on {current_model}: {ve}"
+                            )
+
+                            last_error = AIValidationError(
+                                f"Model {current_model} returned JSON "
+                                f"that failed validation against "
+                                f"{schema.__name__}: {ve}"
+                            )
+
+                            if attempt < max_attempts - 1:
+                                await asyncio.sleep(1.0)
+                                continue
+
                             break
-                        if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
-                            print(f"[AI Gateway] QUOTA EXHAUSTED (429) on {current_model}. Failing over immediately.")
-                            last_error = AIRateLimitError(f"{current_model} rate-limited: {e}")
-                            break
-                        if "503" in error_msg or "unavailable" in error_msg:
-                            print(f"[AI Gateway] MODEL UNAVAILABLE (503) on {current_model}. Failing over immediately.")
-                            break
 
-                        if attempt < max_attempts - 1:
-                            await asyncio.sleep(1.0)
-                            continue
-                        else:
-                            break
+                    print(
+                        f"[AI Gateway] SUCCESS "
+                        f"task={task} "
+                        f"model={current_model} "
+                        f"latency={latency:.2f}s "
+                        "validated=false"
+                    )
 
-                    except asyncio.TimeoutError:
-                        print(f"[AI Gateway] Timeout on {current_model}, attempt={attempt+1}")
-                        last_error = AITimeoutError(f"{current_model} timed out after {timeout_s}s")
+                    await self.health.record_success(
+                        current_model
+                    )
+
+                    return (
+                        (text_output, current_model)
+                        if return_model
+                        else text_output
+                    )
+
+                except errors.APIError as e:
+                    print(
+                        f"[AI Gateway] API error on "
+                        f"{current_model}, "
+                        f"attempt={attempt + 1}: {e}"
+                    )
+
+                    last_error = AIProviderError(
+                        f"{current_model} returned an API error: {e}"
+                    )
+
+                    error_type = self._classify_error(e)
+
+                    if error_type:
+                        await self.health.record_failure(
+                            current_model,
+                            error_type,
+                        )
                         break
 
-                    except Exception as e:
-                        print(f"[AI Gateway] Unexpected error on {current_model}: {e}")
-                        last_error = e
-                        break
+                    # Non-circuit-breaking error
+                    # such as 400 Bad Request.
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(1.0)
+                        continue
 
-        latency = time.time() - start_time
-        print(f"[AI Gateway] FAILED task={task} latency={latency:.2f}s last_error={last_error!r}")
+                    break
+
+                except asyncio.TimeoutError:
+                    print(
+                        f"[AI Gateway] Timeout on "
+                        f"{current_model}, "
+                        f"attempt={attempt + 1}"
+                    )
+
+                    last_error = AITimeoutError(
+                        f"{current_model} timed out"
+                    )
+
+                    await self.health.record_failure(
+                        current_model,
+                        "TIMEOUT",
+                    )
+
+                    break
+
+                except Exception as e:
+                    print(
+                        f"[AI Gateway] Unexpected error "
+                        f"on {current_model}: {e}"
+                    )
+
+                    last_error = e
+                    break
+
+        latency = time.time() - start_time_total
+
+        print(
+            f"[AI Gateway] FAILED "
+            f"task={task} "
+            f"latency={latency:.2f}s "
+            f"last_error={last_error!r}"
+        )
+
         if isinstance(last_error, AIError):
             raise last_error
+
         raise AIUnavailableError(
-            f"All configured AI models are temporarily unavailable or failed. Last error: {last_error}"
+            "All configured AI models are temporarily "
+            "unavailable or failed. "
+            f"Last error: {last_error}"
         )
 
     async def generate_stream(
@@ -171,59 +461,124 @@ class AIGateway:
         timeout: float = 60.0,
         model_override: str = None,
     ):
-        """
-        Async generator that yields text chunks from the model as they arrive.
-        Falls through the same model chain as generate().
-        Use this for SSE / streaming endpoints.
-        """
         if task in ("mentor_response", "teacher_response"):
             max_tokens = 6000
         else:
             max_tokens = settings.GEMINI_MAX_TOKENS
 
-        models = self._resolve_models(task, model_override)
-
-        config = genai.types.GenerateContentConfig(
-            temperature=settings.GEMINI_TEMPERATURE,
-            top_p=settings.GEMINI_TOP_P,
-            top_k=settings.GEMINI_TOP_K,
-            max_output_tokens=max_tokens,
+        models = self._resolve_models(
+            task,
+            model_override,
         )
 
-        async with self.semaphore:
-            for current_model in models:
-                try:
-                    print(f"[AI Gateway] STREAM task={task} model={current_model}")
+        request_deadline = time.monotonic() + timeout
 
+        config_kwargs = {
+            "temperature": settings.GEMINI_TEMPERATURE,
+            "top_p": settings.GEMINI_TOP_P,
+            "top_k": settings.GEMINI_TOP_K,
+            "max_output_tokens": max_tokens,
+            "automatic_function_calling": genai.types.AutomaticFunctionCallingConfig(
+                disable=True
+            ),
+        }
+        
+        if task in ("mentor_response", "teacher_response"):
+            # Set low thinking for latency-sensitive chat responses
+            config_kwargs["thinking_config"] = {"thinking_level": "low"}
+            
+        config = genai.types.GenerateContentConfig(**config_kwargs)
+
+        for current_model in models:
+            if time.monotonic() > request_deadline:
+                raise AITimeoutError(
+                    "Request budget exceeded."
+                )
+
+            if not await self.health.is_available(current_model):
+                print(
+                    f"[AI Gateway] STREAM SKIPPED "
+                    f"{current_model} (unhealthy)"
+                )
+                continue
+
+            try:
+                print(
+                    f"[AI Gateway] STREAM "
+                    f"task={task} "
+                    f"model={current_model}"
+                )
+
+                async with self.semaphore:
+                    stream_start_time = time.monotonic()
+                    
                     response = await asyncio.wait_for(
                         self.client.aio.models.generate_content_stream(
                             model=current_model,
                             contents=prompt,
                             config=config,
                         ),
-                        timeout=timeout
+                        timeout=timeout,
                     )
+
+                    got_first_token = False
+
                     async for chunk in response:
                         if chunk.text:
+                            # The moment we receive a token,
+                            # the connection is healthy.
+                            if not got_first_token:
+                                ttft = time.monotonic() - stream_start_time
+                                print(f"[Latency] TTFT (Time To First Token) for {current_model}: {ttft:.3f}s")
+                                await self.health.record_success(
+                                    current_model
+                                )
+                                got_first_token = True
+
                             yield chunk.text
-                    return
 
-                except errors.APIError as e:
-                    err = str(e).lower()
-                    print(f"[AI Gateway] STREAM error on {current_model}: {e}")
-                    if any(k in err for k in ("404", "not_found", "429", "quota", "503", "unavailable")):
-                        continue
-                    raise
+                return
 
-                except asyncio.TimeoutError:
-                    print(f"[AI Gateway] STREAM timeout on {current_model}")
-                    continue
+            except errors.APIError as e:
+                print(
+                    f"[AI Gateway] STREAM error "
+                    f"on {current_model}: {e}"
+                )
 
-                except Exception as e:
-                    print(f"[AI Gateway] STREAM unexpected error: {e}")
-                    continue
+                error_type = self._classify_error(e)
 
-        raise AIUnavailableError("All models failed during streaming.")
+                if error_type:
+                    await self.health.record_failure(
+                        current_model,
+                        error_type,
+                    )
+
+                continue
+
+            except asyncio.TimeoutError:
+                print(
+                    f"[AI Gateway] STREAM timeout "
+                    f"on {current_model}"
+                )
+
+                await self.health.record_failure(
+                    current_model,
+                    "TIMEOUT",
+                )
+
+                continue
+
+            except Exception as e:
+                print(
+                    f"[AI Gateway] STREAM unexpected "
+                    f"error: {e}"
+                )
+
+                continue
+
+        raise AIUnavailableError(
+            "All models failed during streaming."
+        )
 
 
 ai_gateway = AIGateway()

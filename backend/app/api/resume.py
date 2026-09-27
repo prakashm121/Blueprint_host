@@ -1,6 +1,7 @@
 ﻿import json
 import logging
 import os
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -61,15 +62,14 @@ async def upload_resume(
         .filter(
             ResumeAnalysis.user_id == current_user.id,
             ResumeAnalysis.file_hash == pdf_hash,
-            ResumeAnalysis.status.in_(("COMPLETED", "PENDING", "PROCESSING")),
         )
         .order_by(ResumeAnalysis.id.desc())
         .first()
     )
-    if same_file:
+    if same_file and same_file.status in ("COMPLETED", "PENDING", "PROCESSING"):
         return {"id": same_file.id, "status": same_file.status, "reused": True}
 
-    # 2. A genuinely new file: limited to N new analyses per IST day. Failed analyses don't count.
+    # 2. A genuinely new file (or retry of FAILED): limited to N new analyses per IST day.
     new_today = (
         db.query(func.count(ResumeAnalysis.id))
         .filter(
@@ -86,25 +86,33 @@ async def upload_resume(
             seconds_until_ist_midnight(),
         )
 
-    # 202 Accepted Architecture: Save job as PENDING and dispatch Celery Task
-    analysis = ResumeAnalysis(
-        user_id=current_user.id,
-        file_hash=pdf_hash,
-        file_name=safe_name,
-        extraction_method="pdfminer",
-        status="PENDING" # Assumes you add status to the model, or use ats_score=None as a proxy if db hasn't migrated
-    )
-    db.add(analysis)
+    if same_file and same_file.status == "FAILED":
+        analysis = same_file
+        analysis.status = "PENDING"
+    else:
+        analysis = ResumeAnalysis(
+            user_id=current_user.id,
+            file_hash=pdf_hash,
+            file_name=safe_name,
+            extraction_method="pdfminer",
+            status="PENDING"
+        )
+        db.add(analysis)
+        
     db.commit()
     db.refresh(analysis)
     
-    # Dispatch Celery
-    from app.workers.tasks.ai_tasks import process_resume_task
-    process_resume_task.delay(analysis.id, file_bytes, role, target_companies)
+    # Execute synchronously in a threadpool so it blocks the response but not the server
+    from app.services.resume.service import process_resume_task
+    await asyncio.to_thread(process_resume_task, analysis.id, file_bytes, role, target_companies)
+    
+    # Refresh to get the final status (COMPLETED or FAILED)
+    db.expire_all()
+    db.refresh(analysis)
     
     return {
         "id": analysis.id,
-        "status": "PENDING"
+        "status": analysis.status
     }
 
 @router.get("/history")

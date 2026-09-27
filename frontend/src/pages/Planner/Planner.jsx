@@ -121,11 +121,23 @@ export default function Planner() {
   };
 
   const deleteTask = async (taskId) => {
+    // Optimistic: remove task from UI immediately
+    const previousPlan = queryClient.getQueryData(['plannerPlan']);
+    if (previousPlan) {
+      queryClient.setQueryData(['plannerPlan'], {
+        ...previousPlan,
+        tasks: previousPlan.tasks.filter(t => t.id !== taskId)
+      });
+    }
     try {
       await api.delete(`/api/v1/planner/tasks/${taskId}`);
-      fetchPlan();
+      queryClient.invalidateQueries(['plannerPlan']);
     } catch (err) {
       console.error(err);
+      // Rollback on failure
+      if (previousPlan) {
+        queryClient.setQueryData(['plannerPlan'], previousPlan);
+      }
     }
   };
 
@@ -177,9 +189,9 @@ export default function Planner() {
     return t.displayDay.toLowerCase() === activeDayFilter.toLowerCase();
   });
 
-  const progressPct = plan ? Math.round(plan.completion_percentage || 0) : 0;
-  const completedCount = plan?.completed_tasks || 0;
-  const totalCount = plan?.total_tasks || 0;
+  const totalCount = plan?.tasks ? plan.tasks.length : 0;
+  const completedCount = plan?.tasks ? plan.tasks.filter(t => (t.status || '').toLowerCase() === 'completed').length : 0;
+  const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   const getCategoryProgress = (catName) => {
     if (!plan?.tasks) return 0;

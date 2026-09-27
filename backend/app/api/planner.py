@@ -12,7 +12,7 @@ from app.core.rate_limit import enforce_daily
 from app.db.session import get_db
 from app.models.user import User
 from app.models.planner import WeeklyPlan, PlannerTask
-from app.models.assessment import UserSkillAssessment
+from app.models.assessment import Skill, UserSkillAssessment
 from app.services.context_builder import build_daily_planner_context, build_weekly_plan_context
 from app.services.roadmap.service import generate_weekly_tasks_async, generate_daily_breakdown_async
 router = APIRouter()
@@ -71,9 +71,6 @@ class PlanResponse(BaseModel):
     start_date: date
     end_date: date
     status: str
-    completion_percentage: float
-    total_tasks: int
-    completed_tasks: int
     tasks: List[TaskResponse]
 
     class Config:
@@ -303,7 +300,6 @@ async def create_plan(
 
         for pt in tasks_to_drop:
             # Student isn't completing these â€” drop cleanly
-            existing.total_tasks = max(0, (existing.total_tasks or 0) - 1)
             db.delete(pt)
 
         carry_over_count = len(tasks_to_move)
@@ -341,7 +337,6 @@ async def create_plan(
         fields = _weekly_task_fields(task_data)
         db.add(PlannerTask(
             weekly_plan_id=plan.id,
-            user_id=current_user.id,
             title=fields["title"],
             category=fields["category"],
             priority=fields["priority"],
@@ -349,8 +344,6 @@ async def create_plan(
             due_date=task_due,
             display_order=carry_over_count + i,
         ))
-
-    plan.total_tasks = carry_over_count + len(ai_tasks)
     db.commit()
     db.refresh(plan)
     _invalidate_planner_cache(current_user.id)
@@ -382,7 +375,6 @@ def add_task(
     )
     task = PlannerTask(
         weekly_plan_id=plan.id,
-        user_id=current_user.id,
         title=task_in.title,
         description=task_in.description,
         category=task_in.category,
@@ -391,7 +383,6 @@ def add_task(
         display_order=(max_order[0] + 1) if max_order else 0,
     )
     db.add(task)
-    plan.total_tasks = (plan.total_tasks or 0) + 1
     db.commit()
     db.refresh(task)
     return task
@@ -408,8 +399,8 @@ def update_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    task = db.query(PlannerTask).filter(
-        PlannerTask.id == task_id, PlannerTask.user_id == current_user.id
+    task = db.query(PlannerTask).join(WeeklyPlan).filter(
+        PlannerTask.id == task_id, WeeklyPlan.user_id == current_user.id
     ).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -419,16 +410,6 @@ def update_task(
         setattr(task, field, value)
 
     now_completed = task.status and task.status.lower() == "completed"
-    plan = db.query(WeeklyPlan).get(task.weekly_plan_id)
-    if plan:
-        if not was_completed and now_completed:
-            plan.completed_tasks = (plan.completed_tasks or 0) + 1
-        elif was_completed and not now_completed:
-            plan.completed_tasks = max(0, (plan.completed_tasks or 0) - 1)
-        if plan.total_tasks and plan.total_tasks > 0:
-            plan.completion_percentage = round(
-                (plan.completed_tasks / plan.total_tasks) * 100, 2
-            )
 
     if not was_completed and now_completed:
         task.completed_at = datetime.now(timezone.utc)
@@ -438,9 +419,10 @@ def update_task(
         if skill_key:
             assessment = (
                 db.query(UserSkillAssessment)
+                .join(Skill, UserSkillAssessment.skill_id == Skill.id)
                 .filter(
                     UserSkillAssessment.user_id == current_user.id,
-                    UserSkillAssessment.skill_key == skill_key,
+                    Skill.skill_key == skill_key,
                 )
                 .first()
             )
@@ -465,8 +447,8 @@ def delete_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    task = db.query(PlannerTask).filter(
-        PlannerTask.id == task_id, PlannerTask.user_id == current_user.id
+    task = db.query(PlannerTask).join(WeeklyPlan).filter(
+        PlannerTask.id == task_id, WeeklyPlan.user_id == current_user.id
     ).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -475,16 +457,8 @@ def delete_task(
     # Completed -> Archived (AI remembers it); Pending -> Deleted (forgotten).
     task.status = "Archived" if was_completed else "Deleted"
 
-    plan = db.query(WeeklyPlan).get(task.weekly_plan_id)
-    if plan:
-        plan.total_tasks = max(0, (plan.total_tasks or 0) - 1)
-        if was_completed:
-            plan.completed_tasks = max(0, (plan.completed_tasks or 0) - 1)
-        plan.completion_percentage = (
-            round((plan.completed_tasks / plan.total_tasks) * 100, 2)
-            if plan.total_tasks > 0 else 0
-        )
-
+    # Task count and completion percentage are dynamically calculated on serialization
+    # so we don't need to manually update non-existent columns on the WeeklyPlan model.
     db.commit()
     _invalidate_planner_cache(current_user.id)
     return {"ok": True}

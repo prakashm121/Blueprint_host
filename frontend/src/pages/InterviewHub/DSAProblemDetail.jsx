@@ -28,6 +28,7 @@ export default function DSAProblemDetail() {
   const [notes, setNotes] = useState('');
   const [savedNotes, setSavedNotes] = useState([]);
   const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarkVaultId, setBookmarkVaultId] = useState(null);
   const [solved, setSolved] = useState(false);
 
   // The problem itself is loaded by the query above; this only restores the user's solved status.
@@ -39,21 +40,16 @@ export default function DSAProblemDetail() {
 
   const handleAddNote = async () => {
     if (!notes.trim() || !problem) return;
-    // Persist notes to the Knowledge Vault
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      const { data: userRow } = await supabase.from('users').select('id').eq('supabase_id', userData.user.id).single();
-      await supabase.from('vault_items').insert([{
-        user_id: userRow.id,
+      await api.post('/api/v1/vault/', {
         item_type: 'PERSONAL_NOTE',
         reference_type: 'DSA',
         reference_id: problem.id,
         title: `Notes: ${problem.title}`,
         content: notes.trim(),
-      }]);
+      });
     } catch { /* silent fallback */ }
-    const date = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase();
-    setSavedNotes(prev => [{ text: notes, date }, ...prev]);
+    setSavedNotes([...savedNotes, { text: notes, time: 'Just now' }]);
     setNotes('');
   };
 
@@ -70,18 +66,31 @@ export default function DSAProblemDetail() {
   const handleSaveToVault = async () => {
     if (!problem) return;
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      const { data: userRow } = await supabase.from('users').select('id').eq('supabase_id', userData.user.id).single();
-      await supabase.from('vault_items').insert([{
-        user_id: userRow.id,
-        item_type: 'BOOKMARK',
-        reference_type: 'DSA',
-        reference_id: problem.id,
-        title: problem.title,
-        content: `Difficulty: ${problem.difficulty} | Topics: ${(problem.topic_tags || []).join(', ')}`,
-      }]);
+      if (bookmarked && bookmarkVaultId) {
+        setBookmarked(false);
+        const oldId = bookmarkVaultId;
+        setBookmarkVaultId(null);
+        try {
+          await api.delete(`/api/v1/vault/${oldId}`);
+        } catch {
+          setBookmarked(true); setBookmarkVaultId(oldId);
+        }
+      } else {
+        setBookmarked(true);
+        try {
+          const res = await api.post('/api/v1/vault/', {
+            item_type: 'BOOKMARK',
+            reference_type: 'DSA',
+            reference_id: problem.id,
+            title: problem.title,
+            content: `Difficulty: ${problem.difficulty} | Topics: ${(problem.topic_tags || []).join(', ')}`,
+          });
+          setBookmarkVaultId(res.data.id);
+        } catch {
+          setBookmarked(false);
+        }
+      }
     } catch { /* silent */ }
-    setBookmarked(true);
   };
 
   if (loading) {

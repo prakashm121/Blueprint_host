@@ -39,14 +39,26 @@ export default function Dashboard() {
 
       // Fetch active weekly plan
       const { data: plan } = await supabase.from('weekly_plans')
-        .select('total_tasks, completed_tasks, completion_percentage')
+        .select('id')
         .eq('user_id', userRow.id)
         .eq('status', 'active')
         .maybeSingle();
 
-      const weekly_total = plan?.total_tasks || 0;
-      const weekly_completed = plan?.completed_tasks || 0;
-      const planner_completion = plan?.completion_percentage || 0;
+      let weekly_total = 0;
+      let weekly_completed = 0;
+      let planner_completion = 0;
+
+      if (plan) {
+        const { data: tasks } = await supabase.from('planner_tasks')
+          .select('status')
+          .eq('weekly_plan_id', plan.id);
+        
+        if (tasks) {
+          weekly_total = tasks.length;
+          weekly_completed = tasks.filter(t => (t.status || '').toLowerCase() === 'completed').length;
+          planner_completion = weekly_total > 0 ? Math.round((weekly_completed / weekly_total) * 100) : 0;
+        }
+      }
 
       // Fetch next milestone
       let next_milestone = "Complete onboarding to generate your roadmap";
@@ -72,18 +84,60 @@ export default function Dashboard() {
       const { count: unreadCount } = await supabase.from('notifications')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userRow.id)
-        .eq('is_read', false);
+        .is('read_at', null);
 
-      // DSA Stats (overall readiness needs it)
+      // ── CUMULATIVE PLACEMENT READINESS METRIC ──
+
+      // 1. DSA Stats (30%) - Target 150 problems
       const { count: dsaSolved } = await supabase.from('user_coding_progress')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userRow.id)
         .eq('status', 'solved');
-      const dsa_total = 3632; // Assuming a fixed total or fetch dynamically if needed
+      const dsa_total = 3632;
+      const dsa_points = Math.min(((dsaSolved || 0) / 150) * 30, 30);
 
-      const dsa_score = dsa_total > 0 ? Math.min((dsaSolved / dsa_total) * 100, 100) : 0;
-      const weekly_score = weekly_total > 0 ? (weekly_completed / weekly_total * 100) : 0;
-      const overall_readiness = Math.round((dsa_score * 0.5 + weekly_score * 0.5) * 10) / 10;
+      // 2. Roadmap Milestones (30%)
+      let milestones_total = 0;
+      let milestones_completed = 0;
+      if (roadmap) {
+        const { data: milestones } = await supabase.from('roadmap_milestones')
+          .select('status')
+          .eq('roadmap_id', roadmap.id);
+        if (milestones && milestones.length > 0) {
+          milestones_total = milestones.length;
+          milestones_completed = milestones.filter(m => m.status === 'completed').length;
+        }
+      }
+      const roadmap_points = milestones_total > 0 ? (milestones_completed / milestones_total) * 30 : 0;
+
+      // 3. Resume ATS Score (20%)
+      const { data: resumeData } = await supabase.from('resume_analyses')
+        .select('ats_score')
+        .eq('user_id', userRow.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const resume_points = resumeData?.ats_score ? (Number(resumeData.ats_score) / 100) * 20 : 0;
+
+      // 4. Skills Confidence (20%)
+      const { data: skills } = await supabase.from('user_skill_assessments')
+        .select('self_rated_confidence, ai_rated_confidence')
+        .eq('user_id', userRow.id);
+        
+      let skills_points = 0;
+      if (skills && skills.length > 0) {
+        // Average the confidence (out of 100) across all tracked skills
+        const total_confidence = skills.reduce((acc, curr) => {
+           // Use AI rating if available, otherwise self-rated
+           const conf = curr.ai_rated_confidence || curr.self_rated_confidence || 0;
+           return acc + conf;
+        }, 0);
+        const avg_confidence = total_confidence / skills.length;
+        skills_points = (avg_confidence / 100) * 20;
+      }
+
+      // Calculate Total
+      const overall_readiness = Math.round((dsa_points + roadmap_points + resume_points + skills_points) * 10) / 10;
 
       return {
         profile: {
@@ -190,7 +244,7 @@ export default function Dashboard() {
   });
 
   // Quiz accuracy computed values
-  const quizAttempted = quizStats?.total_attempted ?? 0;
+  const quizPracticed = quizStats?.unique_questions_practiced ?? 0;
   const quizCorrect = quizStats?.total_correct ?? 0;
   const quizAccuracy = quizStats?.accuracy_pct ?? 0;
 
@@ -333,7 +387,7 @@ export default function Dashboard() {
             <ReadinessScale value={isLoading ? 0 : readiness} />
 
             <p className="mt-5 text-sm leading-relaxed text-line">
-              Half of this comes from coding problems solved, half from this week&rsquo;s plan.
+              Based on your roadmap progress (30%), DSA mastery (30%), skills confidence (20%), and resume strength (20%).
             </p>
             <button type="button" onClick={() => navigate('/planner')} className={`${btnOutline} mt-6`}>
               Open weekly planner
@@ -391,10 +445,10 @@ export default function Dashboard() {
             <Measure
               label="Quiz accuracy"
               to="/interview-hub/quiz"
-              pct={quizAttempted > 0 ? quizAccuracy : null}
-              hint={quizAttempted > 0 ? `${quizCorrect} correct of ${quizAttempted} answered` : 'Take a quiz to start tracking accuracy.'}
+              pct={quizPracticed > 0 ? quizAccuracy : null}
+              hint={quizPracticed > 0 ? `${quizCorrect} correct of ${quizAttempted} unique questions practiced` : 'Take a quiz to start tracking accuracy.'}
             >
-              {quizAttempted > 0 ? (
+              {quizPracticed > 0 ? (
                 <Figure value={quizAccuracy} suffix="%" />
               ) : (
                 <p className="text-lg font-semibold text-paper">No quizzes yet</p>

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.models.dashboard_stats import DashboardStatistics
-from app.models.assessment import UserSkillAssessment
+from app.models.assessment import UserSkillAssessment, Skill
 from app.models.planner import WeeklyPlan, PlannerTask
 from app.models.roadmap import RoleRoadmap, RoadmapMilestone
 from app.models.mentor import MentorConversation
@@ -51,8 +51,10 @@ def build_weekly_plan_context(db: Session, user: User) -> dict:
     role = user.target_role or "Software Engineer"
     key_to_label = get_key_to_label(role)
 
+    from app.models.assessment import Skill
     assessments = (
-        db.query(UserSkillAssessment)
+        db.query(Skill.skill_key, UserSkillAssessment.self_rated_confidence)
+        .join(UserSkillAssessment, UserSkillAssessment.skill_id == Skill.id)
         .filter(
             UserSkillAssessment.user_id == user.id,
             UserSkillAssessment.role == role,
@@ -60,16 +62,18 @@ def build_weekly_plan_context(db: Session, user: User) -> dict:
         .all()
     )
     weak_areas = [
-        key_to_label.get(a.skill_key, a.skill_key.replace("_", " ").title())
-        for a in assessments if a.self_rated_confidence < 50
+        key_to_label.get(a[0], a[0].replace("_", " ").title())
+        for a in assessments if a[1] < 50
     ]
 
     # Last 20 completed/archived tasks so AI won't repeat them.
     # "Archived" tasks are ones the user deleted from the dashboard after completing them.
+    from app.models.planner import WeeklyPlan
     completed_tasks = (
         db.query(PlannerTask)
+        .join(WeeklyPlan, WeeklyPlan.id == PlannerTask.weekly_plan_id)
         .filter(
-            PlannerTask.user_id == user.id,
+            WeeklyPlan.user_id == user.id,
             PlannerTask.status.in_(["Completed", "Archived"])
         )
         .order_by(PlannerTask.due_date.desc())
@@ -188,10 +192,12 @@ def build_daily_planner_context(
 
     # Recent completion rate over the last 7 days
     week_ago_dt = datetime.combine(today - timedelta(days=7), datetime.min.time(), tzinfo=timezone.utc)
+    from app.models.planner import WeeklyPlan as _WP
     recent_tasks = (
         db.query(PlannerTask)
+        .join(_WP, _WP.id == PlannerTask.weekly_plan_id)
         .filter(
-            PlannerTask.user_id == user.id,
+            _WP.user_id == user.id,
             PlannerTask.due_date >= week_ago_dt,
         )
         .all()
@@ -371,8 +377,9 @@ def build_mentor_context(db: Session, user: User) -> dict:
     today = date.today()
     overdue_tasks = (
         db.query(PlannerTask.title)
+        .join(WeeklyPlan, WeeklyPlan.id == PlannerTask.weekly_plan_id)
         .filter(
-            PlannerTask.user_id == user.id,
+            WeeklyPlan.user_id == user.id,
             PlannerTask.status != "Completed",
             cast(PlannerTask.due_date, Date) < today,
         )
@@ -439,7 +446,11 @@ def build_mentor_context(db: Session, user: User) -> dict:
         else:
             break
 
-    plan_completion = float(active_plan.completion_percentage or 0) if active_plan else 0
+    plan_completion = 0
+    if active_plan and active_plan.tasks:
+        completed = sum(1 for t in active_plan.tasks if t.status.lower() == "completed")
+        total = len(active_plan.tasks)
+        plan_completion = round((completed / total) * 100) if total > 0 else 0
     if plan_completion < 40:
         tone = "firm_accountability"
     elif plan_completion >= 70:
@@ -569,21 +580,16 @@ def build_teacher_context(db: Session, user: User, topic: str | None) -> dict:
     # Get the student's confidence for this exact skill
     if matched_key:
         assessment = (
-            db.query(UserSkillAssessment)
-            .filter(
-                UserSkillAssessment.user_id == user.id,
-                UserSkillAssessment.role == role,
-                UserSkillAssessment.skill_key == matched_key,
-            )
-            .first()
+            db.query(UserSkillAssessment).join(Skill, UserSkillAssessment.skill_id == Skill.id).filter(UserSkillAssessment.user_id == user.id, UserSkillAssessment.role == role, Skill.skill_key == matched_key).first()
         )
     else:
         # Fallback: fuzzy match
         assessment = (
             db.query(UserSkillAssessment)
+            .join(Skill, UserSkillAssessment.skill_id == Skill.id)
             .filter(
                 UserSkillAssessment.user_id == user.id,
-                UserSkillAssessment.skill_key.ilike(f"%{topic_lower.replace(' ', '_')}%"),
+                Skill.skill_key.ilike(f"%{topic_lower.replace(' ', '_')}%"),
             )
             .first()
         )

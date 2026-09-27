@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.api import deps
 from app.db.session import get_db
 from app.models.user import User
-from app.models.assessment import UserSkillAssessment
+from app.models.assessment import UserSkillAssessment, Skill
 from app.core.role_skills import (
     ROLE_ASSESSMENT_SKILLS,
     get_valid_keys,
@@ -59,6 +59,20 @@ class RoleChangeRequest(BaseModel):
     new_role: str
 
 
+def _get_or_create_skill(db: Session, skill_key: str, category: str = None) -> Skill:
+    skill = db.query(Skill).filter(Skill.skill_key == skill_key).first()
+    if not skill:
+        skill_type = "role_specific"
+        if category == "Core Subjects":
+            skill_type = "subject"
+        elif category == "DSA":
+            skill_type = "dsa"
+        skill = Skill(skill_key=skill_key, skill_type=skill_type, category=category)
+        db.add(skill)
+        db.flush()
+    return skill
+
+
 @router.get("/subjects", response_model=SubjectsResponse)
 def get_subjects(
     current_user: User = Depends(deps.get_current_active_user),
@@ -69,7 +83,8 @@ def get_subjects(
     role_taxonomy = ROLE_ASSESSMENT_SKILLS.get(role, {})
 
     db_rows = (
-        db.query(UserSkillAssessment)
+        db.query(UserSkillAssessment, Skill)
+        .join(Skill, UserSkillAssessment.skill_id == Skill.id)
         .filter(
             UserSkillAssessment.user_id == current_user.id,
             UserSkillAssessment.role == role,
@@ -77,59 +92,54 @@ def get_subjects(
         .all()
     )
     confidence_map: dict[str, int] = {
-        row.skill_key: int(row.self_rated_confidence) for row in db_rows
+        skill.skill_key: int(usa.self_rated_confidence) for usa, skill in db_rows
     }
 
     # --- Auto-carry-over fix for existing users ---
-    # If all role-specific rows are missing or stuck at 25, check for universal (role=NULL) rows
-    # from onboarding and promote them. This is safe and idempotent.
     all_at_default = all(v <= 25 for v in confidence_map.values()) if confidence_map else True
     if all_at_default:
         universal_rows = (
-            db.query(UserSkillAssessment)
+            db.query(UserSkillAssessment, Skill)
+            .join(Skill, UserSkillAssessment.skill_id == Skill.id)
             .filter(
                 UserSkillAssessment.user_id == current_user.id,
                 UserSkillAssessment.role == None,  # noqa: E711
             )
             .all()
         )
-        universal_map = {r.skill_key: int(r.self_rated_confidence) for r in universal_rows}
+        universal_map = {skill.skill_key: int(usa.self_rated_confidence) for usa, skill in universal_rows}
         if any(v > 25 for v in universal_map.values()):
-            # Merge: prefer existing role row, fall back to universal, fall back to 25
             for key, val in universal_map.items():
                 if key not in confidence_map or confidence_map[key] <= 25:
                     confidence_map[key] = val
-            # Persist the upgrade to role-specific rows so next call is fast
-            existing_keys = {r.skill_key for r in db_rows}
-            role_taxonomy = ROLE_ASSESSMENT_SKILLS.get(role, {})
+                    
+            existing_keys = {skill.skill_key for usa, skill in db_rows}
             for cat_name, skills in role_taxonomy.items():
                 for s in skills:
                     sk = s["key"]
                     promoted_conf = confidence_map.get(sk, DEFAULT_CONFIDENCE)
                     if sk in existing_keys:
-                        # Update existing row if still at 25
-                        for row in db_rows:
-                            if row.skill_key == sk and row.self_rated_confidence <= 25 and promoted_conf > 25:
-                                row.self_rated_confidence = promoted_conf
+                        for usa, skill in db_rows:
+                            if skill.skill_key == sk and usa.self_rated_confidence <= 25 and promoted_conf > 25:
+                                usa.self_rated_confidence = promoted_conf
                     else:
-                        skill_type = "subject" if cat_name == "Core Subjects" else ("dsa" if cat_name == "DSA" else "role_specific")
-                        db.add(UserSkillAssessment(
-                            user_id=current_user.id,
-                            skill_key=sk,
-                            skill_type=skill_type,
-                            category=cat_name,
-                            role=role,
-                            self_rated_confidence=promoted_conf,
-                        ))
+                        if promoted_conf > 25:
+                            skill_obj = _get_or_create_skill(db, sk, cat_name)
+                            db.add(UserSkillAssessment(
+                                user_id=current_user.id,
+                                skill_id=skill_obj.id,
+                                role=role,
+                                self_rated_confidence=promoted_conf,
+                            ))
             try:
                 db.commit()
-                # Refresh confidence_map from DB
                 db_rows = (
-                    db.query(UserSkillAssessment)
+                    db.query(UserSkillAssessment, Skill)
+                    .join(Skill, UserSkillAssessment.skill_id == Skill.id)
                     .filter(UserSkillAssessment.user_id == current_user.id, UserSkillAssessment.role == role)
                     .all()
                 )
-                confidence_map = {row.skill_key: int(row.self_rated_confidence) for row in db_rows}
+                confidence_map = {skill.skill_key: int(usa.self_rated_confidence) for usa, skill in db_rows}
             except Exception:
                 db.rollback()
     # --- end auto-carry-over ---
@@ -178,18 +188,14 @@ def update_subjects(
             continue
 
         category = get_category_for_key(body.role, item.skill_key)
-        skill_type = "role_specific"
-        if category == "Core Subjects":
-            skill_type = "subject"
-        elif category == "DSA":
-            skill_type = "dsa"
+        skill_obj = _get_or_create_skill(db, item.skill_key, category)
 
         existing = (
             db.query(UserSkillAssessment)
             .filter(
                 UserSkillAssessment.user_id == current_user.id,
                 UserSkillAssessment.role == body.role,
-                UserSkillAssessment.skill_key == item.skill_key,
+                UserSkillAssessment.skill_id == skill_obj.id,
             )
             .first()
         )
@@ -198,9 +204,7 @@ def update_subjects(
         else:
             db.add(UserSkillAssessment(
                 user_id=current_user.id,
-                skill_key=item.skill_key,
-                skill_type=skill_type,
-                category=category,
+                skill_id=skill_obj.id,
                 role=body.role,
                 self_rated_confidence=item.confidence,
             ))
@@ -208,5 +212,3 @@ def update_subjects(
 
     db.commit()
     return {"success": True, "updated": updated}
-
-

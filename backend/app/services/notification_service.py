@@ -64,6 +64,15 @@ def mark_all_read(db: Session, user_id: int) -> int:
 
 
 def notify_welcome(db: Session, user: User) -> Notification:
+    # Prevent duplicate welcome notifications on roadmap regeneration
+    from app.models.notification import Notification
+    existing = db.query(Notification).filter(
+        Notification.user_id == user.id,
+        Notification.title == "Welcome to PlacementOS!"
+    ).first()
+    if existing:
+        return existing
+        
     return create_notification(
         db,
         user_id=user.id,

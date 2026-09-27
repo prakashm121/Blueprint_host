@@ -14,7 +14,7 @@ class WeeklyPlan(Base):
     __tablename__ = "weekly_plans"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     title = Column(String(150), nullable=False)
     description = Column(Text, nullable=True)
     week_number = Column(SmallInteger, nullable=False)
@@ -22,9 +22,6 @@ class WeeklyPlan(Base):
     end_date = Column(Date, nullable=False)
     generation_source = Column(String(20), nullable=False, default="manual")  # ai / manual
     status = Column(String(20), nullable=False, default="active")  # draft, active, completed, archived
-    completion_percentage = Column(Numeric(5, 2), default=0)
-    total_tasks = Column(Integer, default=0)
-    completed_tasks = Column(Integer, default=0)
     version = Column(Integer, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -42,7 +39,6 @@ class PlannerTask(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     weekly_plan_id = Column(Integer, ForeignKey("weekly_plans.id"), index=True, nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     category = Column(String(50), nullable=False, default="Custom")
@@ -58,7 +54,7 @@ class PlannerTask(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     __table_args__ = (
-        Index("ix_pt_user_due", "user_id", "due_date"),
+        Index("ix_pt_plan_due", "weekly_plan_id", "due_date"),
         Index("ix_pt_plan_status", "weekly_plan_id", "status"),
     )
 

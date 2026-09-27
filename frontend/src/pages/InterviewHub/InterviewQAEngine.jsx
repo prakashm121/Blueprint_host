@@ -2,6 +2,7 @@
 import { useSearchParams, Link } from 'react-router-dom';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
+import { api } from '../../api';
 import qaData from '../../data/qa_filters.json';
 import FilterSheet, { FilterBar, FilterSelect } from '../../components/FilterSheet';
 import { usePresence } from '../../lib/motion';
@@ -154,23 +155,42 @@ export default function InterviewQAEngine() {
     activeDifficulty && { key: 'difficulty', label: activeDifficulty },
   ].filter(Boolean);
 
+  const [bookmarkVaultId, setBookmarkVaultId] = useState(null);
+
   const saveMutation = useMutation({
-    mutationFn: async ({ q, itemType }) => {
-      const { data: userData } = await supabase.auth.getUser();
-      const { data: userRow } = await supabase.from('users').select('id').eq('supabase_id', userData.user.id).single();
-      
-      const { error } = await supabase.from('vault_items').insert([{
-        user_id: userRow.id,
-        itemType: itemType,
+    mutationFn: async ({ q, itemType, currentVaultId, isBookmarked }) => {
+      if (isBookmarked && currentVaultId) {
+        await api.delete(`/api/v1/vault/${currentVaultId}`);
+        return { deleted: true };
+      }
+      const res = await api.post('/api/v1/vault/', {
+        item_type: itemType,
         reference_type: 'INTERVIEW',
         reference_id: q.id,
         title: q.title,
         content: q.body || '',
-      }]);
-      if (error) throw error;
+      });
+      return { deleted: false, id: res.data.id };
     },
-    onSuccess: () => {
-      setBookmarked(true);
+    onMutate: async ({ isBookmarked, currentVaultId }) => {
+      const prevBookmarked = bookmarked;
+      const prevVaultId = bookmarkVaultId;
+      if (isBookmarked) {
+        setBookmarked(false);
+        setBookmarkVaultId(null);
+      } else {
+        setBookmarked(true);
+      }
+      return { prevBookmarked, prevVaultId };
+    },
+    onError: (err, variables, context) => {
+      setBookmarked(context.prevBookmarked);
+      setBookmarkVaultId(context.prevVaultId);
+    },
+    onSuccess: (result) => {
+      if (!result.deleted) {
+        setBookmarkVaultId(result.id);
+      }
       queryClient.invalidateQueries(['vaultItems']);
     }
   });
@@ -180,7 +200,7 @@ export default function InterviewQAEngine() {
 
   const handleBookmark = () => {
     if (!selectedQuestion || bookmarking) return;
-    saveMutation.mutate({ q: selectedQuestion, itemType: 'BOOKMARK' });
+    saveMutation.mutate({ q: selectedQuestion, itemType: 'BOOKMARK', currentVaultId: bookmarkVaultId, isBookmarked: bookmarked });
   };
 
   const handleMarkReviewedAndNext = () => {
@@ -213,9 +233,9 @@ export default function InterviewQAEngine() {
         <div className="flex gap-2">
           <button
             onClick={handleBookmark}
-            disabled={bookmarking || bookmarked}
-            data-tip={bookmarked ? 'Saved to vault' : 'Save to vault'}
-            aria-label={bookmarked ? 'Saved to vault' : 'Save to vault'}
+            disabled={bookmarking}
+            data-tip={bookmarked ? 'Remove from vault' : 'Save to vault'}
+            aria-label={bookmarked ? 'Remove from vault' : 'Save to vault'}
             className={`inline-flex h-10 w-10 items-center justify-center rounded-lg border transition-colors ${
               bookmarked
                 ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'

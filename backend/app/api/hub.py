@@ -6,14 +6,15 @@ from typing import Optional,List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
 from pydantic import BaseModel as PydanticBase
-from sqlalchemy import func, cast, Date
+from sqlalchemy import func, cast, Date, Integer
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.cache import delete_cache, get_cache, set_cache
 from app.db.session import get_db
 from app.models.hub import DSAProblem, InterviewQuestion, QuizQuestion
-from app.models.hub_progress import UserCodingProgress, UserQuizSession
+from app.models.hub_progress import UserCodingProgress, UserQuizSession, UserQuizQuestionAttempt
+import random
 from app.models.user import User
 
 router = APIRouter()
@@ -255,6 +256,68 @@ def list_quiz_questions(
 # Quiz MCQ — attempt submission & server-side evaluation
 # ─────────────────────────────────────────────────────────────────────────────
  
+
+class QuizSessionRequest(PydanticBase):
+    section: str = "All"
+    topic: str = "All"
+    difficulty: str = "All"
+    limit: int = 15
+    replay: bool = False
+
+@router.post("/quiz/session")
+def start_quiz_session(
+    body: QuizSessionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(QuizQuestion)
+
+    if body.section and body.section != "All":
+        query = query.filter(QuizQuestion.section == body.section)
+    if body.topic and body.topic != "All":
+        query = query.filter(QuizQuestion.topic == body.topic)
+    if body.difficulty and body.difficulty != "All":
+        query = query.filter(QuizQuestion.difficulty == body.difficulty)
+
+    if not body.replay:
+        attempted_ids = (
+            db.query(UserQuizQuestionAttempt.question_id)
+            .filter(UserQuizQuestionAttempt.user_id == current_user.id)
+            .subquery()
+        )
+        query = query.filter(~QuizQuestion.id.in_(attempted_ids))
+    
+    questions = query.order_by(func.random()).limit(body.limit).all()
+    remaining = query.count() if not body.replay else len(questions)
+
+    items = []
+    for q in questions:
+        options = [
+            {"option_id": "A", "text": q.option_a},
+            {"option_id": "B", "text": q.option_b},
+            {"option_id": "C", "text": q.option_c},
+            {"option_id": "D", "text": q.option_d},
+        ]
+        random.shuffle(options)
+        
+        items.append({
+            "id": q.id,
+            "section": q.section,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "question": q.question,
+            "options": [
+                {"display_id": chr(65 + i), "option_id": opt["option_id"], "text": opt["text"]}
+                for i, opt in enumerate(options)
+            ]
+        })
+        
+    return {
+        "completed": remaining == 0 and len(questions) < body.limit,
+        "remaining_questions": remaining,
+        "questions": items
+    }
+
 class QuizAnswerItem(PydanticBase):
     quiz_id:         int
     selected_option: str   # "A" | "B" | "C" | "D"
@@ -314,8 +377,7 @@ def submit_quiz_attempt(
     results       = []
     correct_count = 0
  
-    # Evaluate answers — build results list for the response (unchanged)
-    # Only persistence changes: single UserQuizSession row instead of per-answer rows
+    attempts = []
     for answer in body.answers:
         q               = question_map[answer.quiz_id]
         selected        = answer.selected_option.upper()
@@ -334,17 +396,30 @@ def submit_quiz_attempt(
             "option_c":        q.option_c,
             "option_d":        q.option_d,
         })
+        
+        attempts.append(UserQuizQuestionAttempt(
+            user_id=current_user.id,
+            question_id=q.id,
+            selected_option=selected,
+            is_correct=is_correct,
+        ))
  
-    # Persist one summary row per session (replaces per-answer UserQuizAttempt rows)
     section = questions[0].section if questions else "General"
     topic   = questions[0].topic   if questions else None
-    db.add(UserQuizSession(
+    session = UserQuizSession(
         user_id         = current_user.id,
         section         = section,
         topic           = topic,
         total_questions = len(body.answers),
         correct_count   = correct_count,
-    ))
+    )
+    db.add(session)
+    db.flush()
+    
+    for attempt in attempts:
+        attempt.session_id = session.id
+        db.add(attempt)
+        
     db.commit()
  
     # Invalidate the quiz stats cache so the sidebar refreshes
@@ -375,23 +450,36 @@ def get_quiz_stats(
     if cached:
         return cached
  
-    # Single query: SUM from UserQuizSession (one row per session)
-    row = (
-        db.query(
-            func.sum(UserQuizSession.total_questions).label("total_attempted"),
-            func.sum(UserQuizSession.correct_count).label("total_correct"),
-        )
-        .filter(UserQuizSession.user_id == current_user.id)
-        .one()
+    unique_questions = (
+        db.query(func.count(func.distinct(UserQuizQuestionAttempt.question_id)))
+        .filter(UserQuizQuestionAttempt.user_id == current_user.id)
+        .scalar() or 0
     )
-    total_attempted = int(row.total_attempted or 0)
-    total_correct   = int(row.total_correct   or 0)
+    
+    total_attempts = (
+        db.query(func.count(UserQuizQuestionAttempt.id))
+        .filter(UserQuizQuestionAttempt.user_id == current_user.id)
+        .scalar() or 0
+    )
+    
+    total_correct = (
+        db.query(func.sum(cast(UserQuizQuestionAttempt.is_correct, Integer)))
+        .filter(UserQuizQuestionAttempt.user_id == current_user.id)
+        .scalar() or 0
+    )
+    
+    sessions = (
+        db.query(func.count(UserQuizSession.id))
+        .filter(UserQuizSession.user_id == current_user.id)
+        .scalar() or 0
+    )
  
     data = {
-        "total_attempted": total_attempted,
-        "total_correct":   total_correct,
-        "total_incorrect": total_attempted - total_correct,
-        "accuracy_pct":    round((total_correct / total_attempted) * 100, 1) if total_attempted else 0,
+        "unique_questions_practiced": int(unique_questions),
+        "total_question_attempts": int(total_attempts),
+        "total_correct": int(total_correct),
+        "accuracy_pct": round((total_correct / total_attempts) * 100, 1) if total_attempts else 0,
+        "quiz_sessions": int(sessions),
     }
     set_cache(cache_key, data, 300)   # 5 min, matches DSA stats TTL
     return data

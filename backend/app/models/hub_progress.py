@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index, Boolean, UniqueConstraint
 from sqlalchemy.sql import func
 from app.db.session import Base
 
@@ -44,5 +44,23 @@ class UserCodingProgress(Base):
         Index("idx_user_coding_uid",        "user_id"),
         Index("idx_user_coding_uid_qid",    "user_id", "dsa_id"),
         Index("idx_user_coding_uid_status", "user_id", "status"),
+        UniqueConstraint("user_id", "dsa_id", name="uq_user_dsa"),
     )
 
+
+
+class UserQuizQuestionAttempt(Base):
+    __tablename__ = 'user_quiz_question_attempts'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey('user_quiz_sessions.id', ondelete='CASCADE'), nullable=False, index=True)
+    question_id = Column(Integer, ForeignKey('quiz_questions.id', ondelete='CASCADE'), nullable=False, index=True)
+    selected_option = Column(String(1), nullable=False)
+    is_correct = Column(Boolean, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index('ix_user_quiz_attempt_user_question', 'user_id', 'question_id'),
+        Index('ix_user_quiz_attempt_user_session', 'user_id', 'session_id'),
+    )
