@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from app.api import deps
 from app.db.session import get_db
 from app.models.user import User
-from app.models.assessment import UserSkillAssessment
+from app.models.assessment import UserSkillAssessment, Skill
 from app.models.roadmap import RoleRoadmap, RoadmapMilestone
 from app.core.config import settings
 from app.core.rate_limit import enforce_daily
@@ -195,19 +195,31 @@ def submit_role_skills(
         category = get_category_for_key(role, skill_key)
         skill_type = "subject" if category == "Core Subjects" else ("dsa" if category == "DSA" else "role_specific")
 
-        # Atomic upsert: concurrent/repeated submits must not race into the unique constraint.
+        # 1. Upsert Skill to ensure it exists
+        skill_stmt = pg_insert(Skill).values(
+            skill_key=skill_key,
+            skill_type=skill_type,
+            category=category,
+        ).on_conflict_do_update(
+            index_elements=['skill_key'],
+            set_={"skill_type": skill_type, "category": category}
+        ).returning(Skill.id)
+        
+        skill_id = db.execute(skill_stmt).scalar()
+        if not skill_id:
+            skill_id = db.query(Skill.id).filter(Skill.skill_key == skill_key).scalar()
+
+        # 2. Atomic upsert into UserSkillAssessment
         db.execute(
             pg_insert(UserSkillAssessment)
             .values(
                 user_id=current_user.id,
-                skill_key=skill_key,
-                skill_type=skill_type,
-                category=category,
+                skill_id=skill_id,
                 role=role,
                 self_rated_confidence=conf,
             )
             .on_conflict_do_update(
-                constraint="uq_usa_user_role_skill",
+                constraint="uq_usa_user_skill_role",
                 set_={"self_rated_confidence": conf},
             )
         )
