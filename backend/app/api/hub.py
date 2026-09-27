@@ -641,13 +641,23 @@ async def generate_quiz_stream(
 ):
     # 1. Resolve exact scope
     section, topic = body.section, body.topic
+
+    if section and not topic and section in QUIZ_TAXONOMY:
+        topic = random.choice(QUIZ_TAXONOMY[section])
+
     if not section or not topic:
-        try:
-            resolved = resolve_career_to_quiz_scope(body.category, body.skill)
-            section = resolved["section"]
-            topic = resolved["topic"]
-        except UnsupportedCareerScope as e:
-            raise HTTPException(400, str(e))
+        if body.category or body.skill:
+            try:
+                resolved = resolve_career_to_quiz_scope(body.category, body.skill)
+                section = resolved["section"]
+                topic = resolved["topic"]
+            except UnsupportedCareerScope as e:
+                raise HTTPException(400, str(e))
+        else:
+            if not section:
+                section = random.choice(list(QUIZ_TAXONOMY.keys()))
+            if not topic:
+                topic = random.choice(QUIZ_TAXONOMY[section])
 
     if section not in QUIZ_TAXONOMY:
         raise HTTPException(400, f"Unknown section: {section}")
