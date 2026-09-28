@@ -268,7 +268,7 @@ async def generate_teacher_response_stream(
         role = turn["role"].capitalize()
         prompt += f"\n{role}: {turn['content']}"
 
-    prompt += f"\n\nUser:\n{message}\n\nAnswer directly and concisely. For normal questions, stay around 150-300 words. Use more detail only when the question genuinely requires it."
+    prompt += f"\n\nUser:\n{message}\n\nPlease provide a complete and detailed answer."
 
     async for chunk in ai_gateway.generate_stream(task="teacher_response", prompt=prompt, model_override=model_override):
         yield chunk
@@ -286,7 +286,7 @@ async def generate_mentor_response_stream(
         role = turn["role"].capitalize()
         prompt += f"\n{role}: {turn['content']}"
 
-    prompt += f"\n\nUser:\n{message}\n\nAnswer directly and concisely. For normal questions, stay around 150-300 words. Use more detail only when the question genuinely requires it."
+    prompt += f"\n\nUser:\n{message}\n\nPlease provide a complete and detailed answer."
 
     async for chunk in ai_gateway.generate_stream(task="mentor_response", prompt=prompt, model_override=model_override):
         yield chunk
