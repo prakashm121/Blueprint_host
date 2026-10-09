@@ -226,15 +226,15 @@ Tracked honestly rather than hidden:
 | :---: | :---: | :---: |
 | ![Landing 1](Images/LandingPage1.png) | ![Landing 2](Images/LandingPage2.png) | ![Landing 3](Images/LandingPage3.png) |
 
-### Dashboard & AI Mentor
-| Dashboard | Dashboard Metrics | AI Mentor |
-| :---: | :---: | :---: |
-| ![Dashboard](Images/Dashboard1.png) | ![Dashboard Metrics](Images/Dashboard2.png) | ![AI Mentor](Images/AI%20mentor.png) |
+### Dashboard, AI Mentor & Resume Analyser
+| Dashboard | Dashboard Metrics | AI Mentor | Resume Analyser |
+| :---: | :---: | :---: | :---: |
+| ![Dashboard](Images/Dashboard1.png) | ![Dashboard Metrics](Images/Dashboard2.png) | ![AI Mentor](Images/AI%20mentor.png) | ![Resume Analyser](Images/ResumeAnalysis.png) |
 
-### Planner & Profile
-| Weekly Planner | Edit Profile |
-| :---: | :---: |
-| ![Weekly Planner](Images/WeeklyPlanner.png) | ![Edit Profile](Images/EditProfile.png) |
+### Planner, Roadmap & Profile
+| Weekly Planner | Role Roadmap | Edit Profile |
+| :---: | :---: | :---: |
+| ![Weekly Planner](Images/WeeklyPlanner.png) | ![Role Roadmap](Images/RoleRoadmap.png) | ![Edit Profile](Images/EditProfile.png) |
 
 ### Interview Hub
 | DSA Problem List | DSA Workspace | Interview Q&A |
