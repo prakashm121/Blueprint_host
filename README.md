@@ -68,21 +68,17 @@ Blueprint is an AI-powered platform that helps engineering students systematical
 
 ## Architecture
 
-```
-                    Supabase (Postgres + Google OAuth)
-                    ▲                          ▲
-                    │ session verify           │ reads/writes (backend + some direct
-                    │                          │  frontend reads via RLS)
-  React SPA ───────▶│      FastAPI (Render)    │──────▶ Gemini API
-  (Vercel)           │      ┌───────────────┐  │
-                    │      │ Celery worker  │  │──────▶ Redis (Upstash)
-                    │      │ (resume        │  │        broker + app cache
-                    │      │  analysis only)│  │
-                    │      └───────────────┘  │
-                    └───────────────────────────┘
-                                 ▲
-                                 │ hourly HTTPS trigger, shared secret
-                        GitHub Actions (planner reminders)
+```mermaid
+flowchart LR
+    FE["React SPA<br/>Vercel"] -->|HTTPS| API["FastAPI<br/>Render"]
+    FE -.->|some direct reads, via RLS| SB[("Supabase<br/>Postgres + Google OAuth")]
+    API -->|session verify| SB
+    API -->|reads / writes| SB
+    API -->|AI calls| GEM["Gemini API"]
+    API -->|.delay| WORKER["Celery worker<br/>resume analysis only"]
+    API -->|broker + app cache| REDIS[("Redis<br/>Upstash")]
+    WORKER -->|broker| REDIS
+    GH["GitHub Actions<br/>planner reminders"] -->|hourly trigger, shared secret| API
 ```
 
 Two things worth calling out explicitly since they differ from what you might expect from a typical FastAPI + Celery stack:
@@ -204,6 +200,8 @@ This shape was deliberately chosen to stay within free tiers without running mul
 | Whole API | 600 requests/minute per IP (flood guard) |
 
 **Security posture** (full list in [`backend/README.md`](./backend/README.md#security)): Supabase token verified server-side with a 60-second cache; bearer-header auth only (no auth cookie); every ID-based endpoint scoped to the current user; upload validation (PDF magic bytes, size cap, sanitised names); TLS verification on Redis; constant-time internal-secret check; API docs off in production; DOMPurify + security headers on the frontend. The one thing to verify yourself: **Supabase row-level security** on the tables the frontend reads directly (only 5 have policies defined in this repo).
+
+**Load test results**: DB-bound endpoints hold 0% failures through 200 concurrent simulated users (~270 req/s), with the per-IP flood guard above verified to kick in at exactly 600 req/min. AI endpoints are capped by Google's free-tier Gemini quota (15 req/min per lite model) well before the app itself would be the bottleneck. Full charts and methodology in [`backend/README.md`](./backend/README.md#load-testing).
 
 ---
 

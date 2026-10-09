@@ -1,0 +1,5 @@
+data/*.db
+data/*.db-*
+data/tokens.json
+data/seed_summary.json
+results/

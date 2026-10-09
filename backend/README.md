@@ -17,6 +17,7 @@ FastAPI service powering the Blueprint placement-prep platform: Supabase-authent
 - [Background jobs](#background-jobs)
 - [Caching](#caching)
 - [Rate limiting](#rate-limiting)
+- [Load testing](#load-testing)
 - [Security](#security)
 - [Interview Hub content bank](#interview-hub-content-bank)
 - [Deployment](#deployment)
@@ -44,21 +45,16 @@ Dependencies are deliberately minimal: `passlib` and `python-jose` (leftovers fr
 
 ## Architecture
 
-```
-                    Supabase (Postgres + Auth)
-                    ▲                    ▲
-                    │ session verify     │ reads/writes
-                    │                    │
-  Vercel (React) ──▶│  FastAPI (main.py) │──▶ Gemini API (via app/ai/gateway.py)
-                    │  ┌──────────────┐  │
-                    │  │ Celery worker│  │──▶ Redis (Upstash) — broker + app cache
-                    │  │ (resume task │  │
-                    │  │  only)       │  │
-                    │  └──────────────┘  │
-                    └────────────────────┘
-                             ▲
-                             │ hourly HTTPS POST, shared-secret header
-                    GitHub Actions (.github/workflows/planner-reminders.yml)
+```mermaid
+flowchart LR
+    FE["Vercel<br/>React SPA"] -->|HTTPS| API["FastAPI<br/>main.py"]
+    API -->|session verify| SB[("Supabase<br/>Postgres + Auth")]
+    API -->|reads / writes| SB
+    API -->|Gemini calls| GEM["Gemini API<br/>app/ai/gateway.py"]
+    API -->|.delay| WORKER["Celery worker<br/>resume task only"]
+    API -->|broker + app cache| REDIS[("Redis<br/>Upstash")]
+    WORKER -->|broker| REDIS
+    GH["GitHub Actions<br/>planner-reminders.yml"] -->|hourly POST, shared secret| API
 ```
 
 - **Auth**: the frontend authenticates entirely through Supabase (Google OAuth). The backend never issues its own tokens — `app/api/deps.py` takes the Supabase access token from the `Authorization: Bearer` header only (cookie auth was removed), verifies it by calling Supabase's own API (5s timeout), and JIT-provisions a local `User`/`Profile` row on first sight. Verified tokens are cached for **60 seconds** (keyed by a hash of the token), so sign-out or revocation in Supabase takes effect within a minute. An existing local account is only linked by email if Supabase reports the email as confirmed. `app/api/auth.py` only exposes `GET /me`.
@@ -376,6 +372,59 @@ Design notes:
 - In-memory counters are per-process and reset when the free-tier instance sleeps or restarts. That's fine for short bursts; every *daily* quota uses the database or Redis.
 - The per-IP guard is generous on purpose: many students can share one public IP on a campus network, so per-user limits do the real fairness work.
 - The middleware is pure ASGI (not `BaseHTTPMiddleware`) so SSE streaming is untouched, and it is registered before CORS so CORS stays outermost.
+
+---
+
+## Load testing
+
+Locust, run locally against the real `main.py` code on a disposable SQLite copy of the database — never against production. Full methodology, what's excluded and why, and how to reproduce it: [`backend/loadtest/README.md`](loadtest/README.md).
+
+### API capacity (DB-bound endpoints, no AI)
+
+25 seeded users, the real catalog CSVs (3,632 coding problems, ~34,000 interview questions, ~5,700 quiz questions), weighted traffic matching what the frontend actually calls. Staged from 20 to 400 concurrent simulated users:
+
+![Throughput and latency vs concurrency](loadtest/docs/chart_1_capacity_curve.png)
+![Failure rate vs concurrency](loadtest/docs/chart_2_failure_rate.png)
+
+| Concurrent users | Requests/s | p50 | p95 | p99 | Failures |
+|---:|---:|---:|---:|---:|---:|
+| 20  | 31  | 4ms   | 14ms   | 33ms   | 0% |
+| 50  | 76  | 4ms   | 18ms   | 46ms   | 0% |
+| 100 | 149 | 5ms   | 27ms   | 56ms   | 0% |
+| 200 | 269 | 26ms  | 230ms  | 810ms  | 0% |
+| 400 | 282 | 600ms | 1.3s   | 4.4s   | 0.12% |
+
+**Reading it**: throughput and latency both stay flat through 100 concurrent users, then latency jumps roughly 8× between 100 and 200 users (p95: 27ms → 230ms) while throughput only grows ~1.8×, and barely grows at all from 200 → 400 (269 → 282 req/s). Zero request failures through 200 users; failures only appear at 400, and they're `database is locked` — SQLite's single-writer limitation, not something the real Postgres connection pool (`pool_size=50, max_overflow=150`) would hit. The flat-then-knee shape from 100 → 200 users, well before SQLite contention shows up, points at FastAPI's default sync-route thread pool as the likelier ceiling — not confirmed further, flagged here as the next thing to check if real-world latency ever matches this pattern.
+
+Per-endpoint, the slowdown between 100 and 200 users isn't even across the board — writes degrade harder than reads:
+
+![p95 latency by endpoint, 100 vs 200 users](loadtest/docs/chart_3_endpoint_latency.png)
+
+The global per-IP flood guard was verified separately, at its real default: a burst of 650 requests/minute from one IP got exactly 600 `200`s then `429`s from the 601st request on, each carrying the correct `Retry-After` header.
+
+### AI-backed endpoints (real Gemini calls, lite models only)
+
+A **separate**, deliberately small test — 5 concurrent users, 90 seconds, real billed Gemini API calls restricted to the lite model tier. Not a capacity test; see [`loadtest/README.md`](loadtest/README.md#the-ai-endpoint-test-locustfile_aipy-bootstrap_aipy) for why.
+
+![Real Gemini latency per AI endpoint](loadtest/docs/chart_4_ai_endpoints.png)
+
+| Endpoint | Calls | Failed | p50 | p90 |
+|---|---:|---:|---:|---:|
+| Mentor chat (streamed) | 25 | 0 | 0.8s | 5.2s |
+| Generate roadmap | 9 | 0 | 8.3s | 22.0s |
+| Weekly plan | 5 | 0 | 17ms* | 30ms* |
+| Daily plan | 23 | 7† | — | 1.5s |
+
+\* Only the first call per user actually reaches Gemini; the carry-over logic in `create_plan` means most repeat calls in a short window don't need new tasks generated, so most of these 5 requests never called the model.
+† A SQLite-only artifact, not reachable on Postgres — same root cause as the `/planner/daily` exclusion in the capacity test above, this time triggered by tasks this same run's AI calls had just created.
+
+**The actual ceiling for AI endpoints is Google's free-tier Gemini quota, not this app's code**: mid-run, the API started returning `429 RESOURCE_EXHAUSTED` — *"limit: 15, model: gemini-3.5-flash-lite"*, i.e. 15 requests/minute per lite model, project-wide. The app's circuit breaker (`app/ai/gateway.py`) correctly detected the repeated failures and started failing fast instead of continuing to hammer an exhausted model.
+
+### Caveats
+
+- Run on a developer machine, not Render's free-tier container — treat these as the *application's* ceiling, not Render's exact number.
+- Auth and the database are both local (a stub and a SQLite file) — no real network round-trip, unlike the real Supabase Postgres connection.
+- Two endpoints (`GET /hub/stats/dsa`, `POST /planner/daily`'s context build) hit a SQLite-only datetime round-trip gap and are excluded/noted above — confirmed not reproducible on Postgres. Detail in [`loadtest/README.md`](loadtest/README.md#two-endpoints-excluded-from-the-capacity-test-and-why).
 
 ---
 
